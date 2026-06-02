@@ -105,6 +105,15 @@
   .t-lazada{background:rgba(91,108,255,.16);color:#5b6cff}
   .t-cat{background:var(--panel2);color:var(--muted)}
   .mini{height:7px;border-radius:5px;background:var(--panel2);overflow:hidden;display:inline-block;width:80px;vertical-align:middle}
+  /* ranked list (อ่านง่ายกว่ากราฟแท่งสำหรับชื่อไทยยาว) */
+  .ranklist{display:flex;flex-direction:column;gap:11px;padding:4px 2px}
+  .rankrow .top{display:flex;align-items:center;gap:9px;font-size:13px;margin-bottom:5px}
+  .rankrow .rk{flex:0 0 20px;height:20px;border-radius:6px;background:var(--panel2);color:var(--muted);
+    font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .rankrow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+  .rankrow .vl{font-variant-numeric:tabular-nums;font-weight:700;color:var(--txt)}
+  .rankrow .bar{height:7px;border-radius:5px;background:var(--panel2);overflow:hidden}
+  .rankrow .bar > i{display:block;height:100%;border-radius:5px}
   .mini > i{display:block;height:100%;border-radius:5px;background:var(--accent)}
   .pos{color:var(--green);font-weight:600}.neg{color:var(--red);font-weight:600}
   .pill-red{color:var(--red);font-weight:600}.pill-amber{color:var(--amber);font-weight:600}
@@ -204,10 +213,10 @@
     <section class="section" id="sec-sales">
       <h2><span class="bar"></span>ยอดขายทุกมิติ</h2>
       <div class="grid charts">
-        <div class="card c-6"><div class="ctitle">ยอดขายตามหมวดหมู่</div><div class="csub">รายได้รวมในช่วงที่เลือก</div><div class="chart-wrap sm"><canvas id="catChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">สินค้าขายดี (Top 10)</div><div class="csub">เรียงตามยอดขายในช่วงที่เลือก</div><div class="chart-wrap sm" style="overflow:auto"><div class="ranklist" id="catChart"></div></div></div>
         <div class="card c-6"><div class="ctitle">ยอดขายเฉลี่ยตามวันในสัปดาห์</div><div class="csub">เฉลี่ยต่อวัน (ส้ม = เสาร์-อาทิตย์)</div><div class="chart-wrap sm"><canvas id="dowChart"></canvas></div></div>
         <div class="card c-7"><div class="ctitle">ออเดอร์ตามช่วงเวลาของวัน</div><div class="csub">ชั่วโมงที่ลูกค้าสั่งซื้อมากที่สุด</div><div class="chart-wrap sm"><canvas id="hourChart"></canvas></div></div>
-        <div class="card c-5"><div class="ctitle">ยอดขายตามภูมิภาค</div><div class="csub">Top จังหวัด/ภูมิภาค</div><div class="chart-wrap sm"><canvas id="regionChart"></canvas></div></div>
+        <div class="card c-5"><div class="ctitle">ยอดขายตามพื้นที่</div><div class="csub">Top 10 เขต/จังหวัดที่ขายดี</div><div class="chart-wrap sm" style="overflow:auto"><div class="ranklist" id="regionChart"></div></div></div>
         <div class="card c-4"><div class="ctitle">สถานะออเดอร์</div><div class="csub">สำเร็จ vs ยกเลิก/คืน</div><div class="chart-wrap sm"><canvas id="statusChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">ลูกค้าใหม่ vs ลูกค้าเก่า</div><div class="csub">ตามรายได้</div><div class="chart-wrap sm"><canvas id="custChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">AOV รายแพลตฟอร์ม</div><div class="csub">บาท/ออเดอร์</div><div class="chart-wrap sm"><canvas id="aovChart"></canvas></div></div>
@@ -321,6 +330,18 @@ function applyChartTheme(){Chart.defaults.color=cssvar('--muted');Chart.defaults
 function toggleCard(id,show){const el=document.getElementById(id);const c=el&&el.closest('.card');if(c)c.style.display=show?'':'none';}
 function toggleSection(secId,show){const s=document.getElementById(secId);if(s)s.style.display=show?'':'none';
   const nav=document.querySelector('#nav a[data-sec="'+secId.replace('sec-','')+'"]'); if(nav)nav.style.display=show?'':'none';}
+// รายการอันดับ (แทนกราฟแท่งสำหรับข้อมูลที่มีชื่อยาว ๆ)
+function renderRankList(id, entries, color){
+  const el=document.getElementById(id); if(!el)return;
+  const max=Math.max(1,...entries.map(e=>e[1]));
+  el.innerHTML = entries.map(([name,val],i)=>`
+    <div class="rankrow">
+      <div class="top"><span class="rk">${i+1}</span>
+        <span class="nm" title="${(''+name).replace(/"/g,'&quot;')}">${name}</span>
+        <span class="vl">${fmt(val)}</span></div>
+      <div class="bar"><i style="width:${Math.max(2,val/max*100)}%;background:${color}"></i></div>
+    </div>`).join('') || '<div class="muted" style="padding:24px;text-align:center">ไม่มีข้อมูล</div>';
+}
 
 function kpiCard(label,value,d,sparkId){
   const dd=d?`<span class="delta ${d.cls}">${d.txt}</span><span class="vs">vs ช่วงก่อน</span>`:'';
@@ -349,6 +370,7 @@ function render(){
 
   $('#metaLine').textContent=`${curD[0]} ถึง ${end} · ${state.win} วัน · ${DATA.meta.currency} · อัปเดต ${DATA.meta.generated_at.replace('T',' ')}`;
   $('#ovHint').textContent=`เทียบกับ ${state.win} วันก่อนหน้า`;
+  $('#catSel').style.display = DATA.meta.categories.length ? '' : 'none';
 
   // daily revenue per platform
   const daily={}; for(const p of DATA.meta.platforms)daily[p]=curD.map(()=>0);
@@ -398,6 +420,7 @@ function render(){
 function renderSales(curSet,curD){
   const accent=cssvar('--accent');
   const catRev={}; for(const c of DATA.meta.categories)catRev[c]=0;
+  const prodRev={};
   const regRev={}, stat={completed:0,cancelled:0,returned:0}, cust={new:0,returning:0};
   const dowSum=Array(7).fill(0), hour=Array(24).fill(0);
   const aovP={}; DATA.meta.platforms.forEach(p=>aovP[p]={rev:0,n:0});
@@ -405,7 +428,8 @@ function renderSales(curSet,curD){
   for(const o of ordersIn(curSet)){
     const cancelled=(o.status==='cancelled'||o.status==='returned');
     if(cancelled){stat[o.status]++;}
-    if(!cancelled){for(const i of o.items){ if(catRev[i.category]!==undefined)catRev[i.category]+=i.qty*i.price; }}
+    if(!cancelled){for(const i of o.items){ if(catRev[i.category]!==undefined)catRev[i.category]+=i.qty*i.price;
+      const pk=i.name||i.sku||'-'; prodRev[pk]=(prodRev[pk]||0)+i.qty*i.price; }}
     const m=orderMatch(o); if(m.rev<=0||cancelled)continue;
     stat.completed++;
     regRev[o.region]=(regRev[o.region]||0)+m.rev;
@@ -414,17 +438,16 @@ function renderSales(curSet,curD){
     hour[o.hour]+=1;
     aovP[o.platform].rev+=m.rev; aovP[o.platform].n++;
   }
-  const cats=Object.keys(catRev);
-  mk('catChart',{type:'bar',data:{labels:cats,datasets:[{data:cats.map(c=>catRev[c]),backgroundColor:accent,borderRadius:6}]},
-    options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:fmtK}}}}});
+  const topProd=Object.entries(prodRev).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  renderRankList('catChart', topProd, accent);
   mk('dowChart',{type:'bar',data:{labels:DOW,datasets:[{data:dowSum.map((v,i)=>dowOcc[i]?v/dowOcc[i]:0),
     backgroundColor:DOW.map((_,i)=>i>=5?'#f59e0b':accent),borderRadius:6}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
   mk('hourChart',{type:'bar',data:{labels:[...Array(24).keys()].map(h=>h+':00'),datasets:[{data:hour,backgroundColor:accent,borderRadius:4}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:12}},y:{ticks:{precision:0}}}}});
-  const regs=Object.keys(regRev).sort((a,b)=>regRev[b]-regRev[a]);
-  mk('regionChart',{type:'bar',data:{labels:regs,datasets:[{data:regs.map(r=>regRev[r]),backgroundColor:'#9b5bff',borderRadius:6}]},
-    options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:fmtK}}}}});
+  const regs=Object.keys(regRev).sort((a,b)=>regRev[b]-regRev[a]).slice(0,10);
+  const cleanReg=r=>String(r).split('/')[0].trim();
+  renderRankList('regionChart', regs.map(r=>[cleanReg(r), regRev[r]]), '#9b5bff');
   mk('statusChart',{type:'doughnut',data:{labels:['สำเร็จ','ยกเลิก','คืนสินค้า'],
     datasets:[{data:[stat.completed,stat.cancelled,stat.returned],backgroundColor:['#10b981','#ef4444','#f59e0b'],borderWidth:0}]},
     options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
@@ -436,8 +459,7 @@ function renderSales(curSet,curD){
     datasets:[{data:ap.map(p=>aovP[p].n?aovP[p].rev/aovP[p].n:0),backgroundColor:ap.map(p=>PLT[p].c),borderRadius:6}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
   // ซ่อนการ์ดที่ไม่มีข้อมูลจริง
-  const catTotal=cats.reduce((a,c)=>a+catRev[c],0);
-  toggleCard('catChart', cats.length>0 && catTotal>0);
+  toggleCard('catChart', topProd.length>0);
   toggleCard('regionChart', regs.length>0);
   toggleCard('custChart', cust.new>0 && cust.returning>0);
 }
@@ -471,7 +493,7 @@ function drawProducts(){
       <th>สัดส่วน</th></tr></thead><tbody>`+
     rows.map(r=>`<tr>
       <td class="muted">${r.sku}</td><td>${r.name}</td>
-      <td><span class="tag t-cat">${r.category}</span></td>
+      <td>${r.category?'<span class="tag t-cat">'+r.category+'</span>':'<span class="muted">-</span>'}</td>
       <td class="num">${fmt(r.units)}</td>
       <td class="num">${fmt(r.revenue)}</td>
       <td class="num ${r.profit>=0?'pos':'neg'}">${fmt(r.profit)}</td>
@@ -484,6 +506,10 @@ function drawProducts(){
 }
 
 function renderProfit(curSet,s,net,netp,ad){
+  // ซ่อนทั้งส่วนถ้าไม่มีต้นทุน/ค่าธรรมเนียม/ค่าโฆษณา (ไม่งั้นกำไร=ยอดขาย ดูไม่มีประโยชน์)
+  const meaningful = s.cogs>0 || s.fee>0 || ad.spend>0;
+  toggleSection('sec-profit', meaningful);
+  if(!meaningful) return;
   const noCost = s.cogs<=0;
   const ph=$('#profitHint'); if(ph) ph.textContent = noCost
     ? '⚠️ ยังไม่ได้ใส่ต้นทุนสินค้า — ตัวเลขกำไรยังไม่หักต้นทุน' : '';
