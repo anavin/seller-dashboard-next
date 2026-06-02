@@ -74,7 +74,8 @@
   .kpi .label{color:var(--muted);font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px}
   .kpi .value{font-size:25px;font-weight:700;margin-top:7px;letter-spacing:-.5px}
   .kpi .foot{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;min-height:18px}
-  .kpi .spark{position:absolute;right:10px;bottom:8px;width:78px;height:34px;opacity:.85}
+  .kpi .spark{position:absolute;right:14px;bottom:12px;width:84px;height:26px;opacity:.45;pointer-events:none}
+  .kpi .spark canvas{width:100%!important;height:100%!important}
   .delta{font-weight:600;padding:1px 6px;border-radius:6px;font-size:11px}
   .delta.up{color:var(--green);background:rgba(16,185,129,.12)}
   .delta.down{color:var(--red);background:rgba(239,68,68,.12)}
@@ -227,7 +228,7 @@
 
     <!-- PROFIT -->
     <section class="section" id="sec-profit">
-      <h2><span class="bar"></span>กำไร &amp; ต้นทุน</h2>
+      <h2><span class="bar"></span>กำไร &amp; ต้นทุน <span class="hint" id="profitHint" style="color:var(--amber)"></span></h2>
       <div class="grid kpis" id="profitKpi"></div>
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-6"><div class="ctitle">โครงสร้างกำไร (Waterfall)</div><div class="csub">จากยอดขายถึงกำไรสุทธิ</div><div class="chart-wrap"><canvas id="waterfallChart"></canvas></div></div>
@@ -316,10 +317,14 @@ function delta(cur,prev){
 function mk(id,cfg){ if(charts[id])charts[id].destroy(); const el=document.getElementById(id); if(el)charts[id]=new Chart(el,cfg); }
 function applyChartTheme(){Chart.defaults.color=cssvar('--muted');Chart.defaults.borderColor=cssvar('--line');
   Chart.defaults.font.family='Inter, Noto Sans Thai, sans-serif';}
+// ซ่อนการ์ด/ส่วนที่ไม่มีข้อมูล (ข้อมูลจริงบางมิติว่าง) ให้หน้าดูแน่นและโปร
+function toggleCard(id,show){const el=document.getElementById(id);const c=el&&el.closest('.card');if(c)c.style.display=show?'':'none';}
+function toggleSection(secId,show){const s=document.getElementById(secId);if(s)s.style.display=show?'':'none';
+  const nav=document.querySelector('#nav a[data-sec="'+secId.replace('sec-','')+'"]'); if(nav)nav.style.display=show?'':'none';}
 
 function kpiCard(label,value,d,sparkId){
   const dd=d?`<span class="delta ${d.cls}">${d.txt}</span><span class="vs">vs ช่วงก่อน</span>`:'';
-  const sp=sparkId?`<canvas class="spark" id="${sparkId}"></canvas>`:'';
+  const sp=sparkId?`<div class="spark"><canvas id="${sparkId}"></canvas></div>`:'';
   return `<div class="card kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="foot">${dd}</div>${sp}</div>`;
 }
 function spark(id,arr,color){
@@ -352,15 +357,18 @@ function render(){
     const m=orderMatch(o); if(m.rev<=0)continue; daily[o.platform][idx[o.date]]+=m.rev; }
   const dailyTotal=curD.map((_,i)=>DATA.meta.platforms.reduce((t,p)=>t+daily[p][i],0));
 
-  $('#kpiGrid').innerHTML=
+  // โชว์เฉพาะ KPI ที่มีข้อมูลจริง (กำไร/margin เมื่อมีต้นทุน, ROAS เมื่อมีโฆษณา)
+  const hasCost=s.cogs>0, hasAds=ad.spend>0;
+  let cards =
     kpiCard('ยอดขายรวม',fmt(s.rev)+' ฿',delta(s.rev,sp.rev),'spkRev')+
     kpiCard('ออเดอร์',fmt(s.orders),delta(s.orders,sp.orders),'spkOrd')+
-    kpiCard('กำไรสุทธิ',fmt(net)+' ฿',delta(net,netp),'spkNet')+
-    kpiCard('AOV',fmt(s.aov)+' ฿',delta(s.aov,sp.aov))+
-    kpiCard('อัตรากำไรสุทธิ',margin.toFixed(1)+'%',delta(margin,marginp))+
-    kpiCard('ROAS โฆษณา',ad.roas.toFixed(2)+'x',delta(ad.roas,adp.roas))+
+    kpiCard('AOV (เฉลี่ย/ออเดอร์)',fmt(s.aov)+' ฿',delta(s.aov,sp.aov))+
     kpiCard('จำนวนชิ้นที่ขาย',fmt(s.units),delta(s.units,sp.units))+
     kpiCard('อัตรายกเลิก/คืน',s.cancelRate.toFixed(1)+'%',delta(sp.cancelRate,s.cancelRate));
+  if(hasCost) cards += kpiCard('กำไรสุทธิ',fmt(net)+' ฿',delta(net,netp),'spkNet')+
+                       kpiCard('อัตรากำไรสุทธิ',margin.toFixed(1)+'%',delta(margin,marginp));
+  if(hasAds)  cards += kpiCard('ROAS โฆษณา',ad.roas.toFixed(2)+'x',delta(ad.roas,adp.roas));
+  $('#kpiGrid').innerHTML = cards;
   spark('spkRev',dailyTotal,PLT.lazada.c);
   const dOrders=curD.map(()=>0);
   for(const o of ordersIn(curSet)){if(o.status==='cancelled'||o.status==='returned')continue;const m=orderMatch(o);if(m.rev>0)dOrders[idx[o.date]]++;}
@@ -427,6 +435,11 @@ function renderSales(curSet,curD){
   mk('aovChart',{type:'bar',data:{labels:ap.map(p=>PLT[p].name),
     datasets:[{data:ap.map(p=>aovP[p].n?aovP[p].rev/aovP[p].n:0),backgroundColor:ap.map(p=>PLT[p].c),borderRadius:6}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  // ซ่อนการ์ดที่ไม่มีข้อมูลจริง
+  const catTotal=cats.reduce((a,c)=>a+catRev[c],0);
+  toggleCard('catChart', cats.length>0 && catTotal>0);
+  toggleCard('regionChart', regs.length>0);
+  toggleCard('custChart', cust.new>0 && cust.returning>0);
 }
 
 let prodCache=[], prodSort={key:'revenue',dir:-1};
@@ -471,6 +484,9 @@ function drawProducts(){
 }
 
 function renderProfit(curSet,s,net,netp,ad){
+  const noCost = s.cogs<=0;
+  const ph=$('#profitHint'); if(ph) ph.textContent = noCost
+    ? '⚠️ ยังไม่ได้ใส่ต้นทุนสินค้า — ตัวเลขกำไรยังไม่หักต้นทุน' : '';
   $('#profitKpi').innerHTML=
     kpiCard('ยอดขาย',fmt(s.rev)+' ฿')+
     kpiCard('ต้นทุนสินค้า (COGS)',fmt(s.cogs)+' ฿')+
@@ -488,9 +504,14 @@ function renderProfit(curSet,s,net,netp,ad){
   const cs=Object.keys(cat);
   mk('profitCatChart',{type:'bar',data:{labels:cs,datasets:[{data:cs.map(c=>cat[c]),backgroundColor:'#10b981',borderRadius:6}]},
     options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:fmtK}}}}});
+  const catProfitTotal=cs.reduce((a,c)=>a+Math.abs(cat[c]),0);
+  toggleCard('profitCatChart', cs.length>0 && catProfitTotal>0);
 }
 
 function renderAds(curSet,curD,ad,adp,idx){
+  const hasAds = ad.spend>0 || ad.rev>0;
+  toggleSection('sec-ads', hasAds);
+  if(!hasAds) return;
   $('#adsKpi').innerHTML=
     kpiCard('ค่าโฆษณารวม',fmt(ad.spend)+' ฿',delta(ad.spend,adp.spend))+
     kpiCard('ยอดขายจากโฆษณา',fmt(ad.rev)+' ฿',delta(ad.rev,adp.rev))+
