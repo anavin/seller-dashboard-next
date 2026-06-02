@@ -22,6 +22,67 @@ import requests
 LAZADA_BASE = "https://api.lazada.co.th/rest"
 AUTH_BASE = "https://auth.lazada.com/rest"
 LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "120"))
+SB_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SB_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+
+
+def _sb_all(table, select="*", extra=""):
+    """อ่านทุกแถวจาก Supabase แบบแบ่งหน้า"""
+    out, offset = [], 0
+    h = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"}
+    while True:
+        url = f"{SB_URL}/rest/v1/{table}?select={select}&limit=1000&offset={offset}{extra}"
+        r = requests.get(url, headers=h, timeout=25)
+        r.raise_for_status()
+        rows = r.json()
+        out += rows
+        if len(rows) < 1000:
+            break
+        offset += 1000
+    return out
+
+
+def build_from_db():
+    """อ่านข้อมูลจาก Supabase แล้วประกอบเป็น JSON เดียวกับที่ dashboard ใช้ (เร็ว)"""
+    orders = _sb_all("lz_orders")
+    items = _sb_all("lz_order_items")
+    products = _sb_all("lz_products")
+
+    by_order = {}
+    for it in items:
+        by_order.setdefault(it["order_id"], []).append({
+            "sku": it.get("sku", ""), "name": it.get("name", ""),
+            "category": it.get("category", "") or "",
+            "qty": int(it.get("qty", 1) or 1),
+            "price": float(it.get("price", 0) or 0), "cost": float(it.get("cost", 0) or 0),
+        })
+
+    order_rows = [{
+        "date": str(o.get("date", ""))[:10], "hour": int(o.get("hour", 12) or 12),
+        "platform": o.get("platform", "lazada"), "status": o.get("status", ""),
+        "region": o.get("region", "") or "", "customer": o.get("customer", "new"),
+        "shipping_fee": float(o.get("shipping_fee", 0) or 0),
+        "platform_fee": float(o.get("platform_fee", 0) or 0),
+        "items": by_order.get(o["order_id"], []),
+    } for o in orders]
+
+    prod_rows = [{
+        "sku": p.get("sku", ""), "name": p.get("name", ""), "category": p.get("category", "") or "",
+        "price": float(p.get("price", 0) or 0), "cost": float(p.get("cost", 0) or 0),
+        "stock": {"tiktok": 0, "shopee": 0, "lazada": int(p.get("stock_lazada", 0) or 0)},
+    } for p in products]
+
+    dates = sorted({r["date"] for r in order_rows if r["date"]})
+    cats = sorted({i["category"] for r in order_rows for i in r["items"] if i["category"]})
+    regions = sorted({r["region"] for r in order_rows if r["region"]})
+    return {
+        "meta": {"currency": "THB",
+                 "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                 "start_date": dates[0] if dates else "", "end_date": dates[-1] if dates else "",
+                 "days": len(dates), "source": "supabase",
+                 "platforms": ["tiktok", "shopee", "lazada"], "categories": cats, "regions": regions},
+        "orders": order_rows, "products": prod_rows, "ads": [],
+    }
 
 
 def _sign(secret, path, params):
@@ -241,7 +302,10 @@ class handler(BaseHTTPRequestHandler):
             self._send(401, {"error": "unauthorized"})
             return
         try:
-            data = build_data(debug=debug)
+            if SB_URL and SB_KEY and not debug:
+                data = build_from_db()          # มี Supabase -> อ่านจาก DB (เร็ว)
+            else:
+                data = build_data(debug=debug)  # ยังไม่ตั้ง DB -> ดึง Lazada สดแบบเดิม
             self._send(200, data, cache=not debug)
         except Exception as e:
             self._send(500, {"error": str(e)})
