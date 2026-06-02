@@ -60,8 +60,9 @@
   .chip.on.shopee{background:rgba(238,77,45,.12);border-color:rgba(238,77,45,.4)}
   .chip.on.lazada{background:rgba(91,108,255,.14);border-color:rgba(91,108,255,.45)}
   .chip:not(.on) .dot{background:var(--soft)!important}
-  select{padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);
+  select,.dateinput{padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);
     color:var(--txt);font-size:13px;cursor:pointer;font-family:inherit}
+  .dateinput{color-scheme:light}
   .content{padding:22px 24px;display:flex;flex-direction:column;gap:26px}
   .section h2{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:9px;color:var(--txt)}
   .section h2 .bar{width:4px;height:15px;background:var(--accent);border-radius:2px}
@@ -195,6 +196,10 @@
         <span class="chip on lazada" data-plt="lazada"><span class="dot" style="background:var(--lazada)"></span>Lazada</span>
       </div>
       <select id="catSel"><option value="all">ทุกหมวดหมู่</option></select>
+      <input type="date" id="dFrom" class="dateinput" title="จากวันที่">
+      <span style="color:var(--soft);font-size:13px">–</span>
+      <input type="date" id="dTo" class="dateinput" title="ถึงวันที่">
+      <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
     </div>
   </div>
 
@@ -283,11 +288,33 @@ const fmt2=n=>Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumF
 const fmtK=n=>Math.abs(n)>=1e6?(n/1e6).toFixed(1)+'M':Math.abs(n)>=1e3?(n/1e3).toFixed(1)+'k':Math.round(n);
 const $=s=>document.querySelector(s);
 let DATA=null, charts={};
-const state={win:30, platforms:new Set(['tiktok','shopee','lazada']), category:'all'};
+const state={win:30, platforms:new Set(['tiktok','shopee','lazada']), category:'all', mode:'preset', from:'', to:'', tab:'overview'};
 
 function cssvar(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
 function addDays(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
 function windowDates(end,win){const a=[];for(let i=win-1;i>=0;i--)a.push(addDays(end,-i));return a;}
+function datesBetween(a,b){const out=[];let d=a;while(d<=b){out.push(d);d=addDays(d,1);}return out;}
+function getWindows(){
+  const end=DATA.meta.end_date;
+  if(state.mode==='custom'&&state.from&&state.to){
+    const from=state.from<=state.to?state.from:state.to, to=state.from<=state.to?state.to:state.from;
+    const curD=datesBetween(from,to);
+    return {curD, prevD:windowDates(addDays(from,-1), curD.length)};
+  }
+  const curD=windowDates(end,state.win);
+  return {curD, prevD:windowDates(addDays(curD[0],-1),state.win)};
+}
+// ---------- แท็บเมนู: คลิกเมนูข้างแล้วโชว์เฉพาะหมวดนั้น ----------
+const TAB_TITLES={overview:'ภาพรวมธุรกิจ',sales:'ยอดขายทุกมิติ',products:'สินค้า',profit:'กำไร & ต้นทุน',ads:'โฆษณา',inventory:'สต็อกสินค้า'};
+function markEmpty(secId,isEmpty){const s=document.getElementById(secId); if(s)s.dataset.empty=isEmpty?'1':'';
+  const nav=document.querySelector('#nav a[data-sec="'+secId.replace('sec-','')+'"]'); if(nav)nav.style.display=isEmpty?'none':'';}
+function applyVisibility(){
+  const cur=document.getElementById('sec-'+state.tab);
+  if(!cur || cur.dataset.empty==='1') state.tab='overview';
+  document.querySelectorAll('.section').forEach(s=>{ s.style.display=(s.id==='sec-'+state.tab)?'':'none'; });
+  $('#nav').querySelectorAll('a').forEach(a=>a.classList.toggle('active', a.dataset.sec===state.tab));
+  $('#pageTitle').textContent=TAB_TITLES[state.tab]||'ภาพรวมธุรกิจ';
+}
 
 // ---------- aggregation ----------
 function matchCat(it){return state.category==='all'||it.category===state.category;}
@@ -361,15 +388,19 @@ function spark(id,arr,color){
 function render(){
   applyChartTheme();
   const end=DATA.meta.end_date;
-  const curD=windowDates(end,state.win), prevD=windowDates(addDays(curD[0],-1),state.win);
+  const {curD,prevD}=getWindows();
   const curSet=new Set(curD), prevSet=new Set(prevD);
   const s=aggSales(curSet), sp=aggSales(prevSet);
   const ad=aggAds(curSet), adp=aggAds(prevSet);
   const net=s.rev-s.cogs-s.fee-ad.spend, netp=sp.rev-sp.cogs-sp.fee-adp.spend;
   const margin=s.rev?net/s.rev*100:0, marginp=sp.rev?netp/sp.rev*100:0;
+  // กำหนดว่าหมวดไหนมีข้อมูล แล้วโชว์เฉพาะแท็บที่เลือก (ก่อนวาดกราฟ เพื่อให้กราฟไซซ์ถูก)
+  markEmpty('sec-ads', !(ad.spend>0||ad.rev>0));
+  markEmpty('sec-profit', !(s.cogs>0||s.fee>0||ad.spend>0));
+  applyVisibility();
 
-  $('#metaLine').textContent=`${curD[0]} ถึง ${end} · ${state.win} วัน · ${DATA.meta.currency} · อัปเดต ${DATA.meta.generated_at.replace('T',' ')}`;
-  $('#ovHint').textContent=`เทียบกับ ${state.win} วันก่อนหน้า`;
+  $('#metaLine').textContent=`${curD[0]} ถึง ${curD[curD.length-1]} · ${curD.length} วัน · ${DATA.meta.currency} · อัปเดต ${DATA.meta.generated_at.replace('T',' ')}`;
+  $('#ovHint').textContent=`เทียบกับ ${curD.length} วันก่อนหน้า`;
   $('#catSel').style.display = DATA.meta.categories.length ? '' : 'none';
 
   // daily revenue per platform
@@ -508,7 +539,6 @@ function drawProducts(){
 function renderProfit(curSet,s,net,netp,ad){
   // ซ่อนทั้งส่วนถ้าไม่มีต้นทุน/ค่าธรรมเนียม/ค่าโฆษณา (ไม่งั้นกำไร=ยอดขาย ดูไม่มีประโยชน์)
   const meaningful = s.cogs>0 || s.fee>0 || ad.spend>0;
-  toggleSection('sec-profit', meaningful);
   if(!meaningful) return;
   const noCost = s.cogs<=0;
   const ph=$('#profitHint'); if(ph) ph.textContent = noCost
@@ -536,7 +566,6 @@ function renderProfit(curSet,s,net,netp,ad){
 
 function renderAds(curSet,curD,ad,adp,idx){
   const hasAds = ad.spend>0 || ad.rev>0;
-  toggleSection('sec-ads', hasAds);
   if(!hasAds) return;
   $('#adsKpi').innerHTML=
     kpiCard('ค่าโฆษณารวม',fmt(ad.spend)+' ฿',delta(ad.spend,adp.spend))+
@@ -598,7 +627,24 @@ function renderInventory(){
 // ---------- events ----------
 $('#winSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   $('#winSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); state.win=+b.dataset.win; render();};
+  b.classList.add('active'); state.win=+b.dataset.win; state.mode='preset'; render(); syncDateInputs();};
+function syncDateInputs(){const {curD}=getWindows(); $('#dFrom').value=curD[0]; $('#dTo').value=curD[curD.length-1];}
+function onDateChange(){state.mode='custom'; state.from=$('#dFrom').value; state.to=$('#dTo').value;
+  if(!state.from||!state.to)return;
+  $('#winSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active')); render();}
+$('#dFrom').onchange=onDateChange; $('#dTo').onchange=onDateChange;
+function exportCSV(){
+  const {curD}=getWindows(); const set=new Set(curD);
+  const rows=[['วันที่','ช่องทาง','สถานะ','พื้นที่','SKU','สินค้า','จำนวน','ราคา/ชิ้น','รวม']];
+  for(const o of ordersIn(set)){ for(const i of o.items){ if(!matchCat(i))continue;
+    rows.push([o.date,(PLT[o.platform]||{name:o.platform}).name,o.status,(o.region||'').split('/')[0],
+      i.sku,i.name,i.qty,i.price,i.qty*i.price]); }}
+  const csv='﻿'+rows.map(r=>r.map(c=>{c=''+c;return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`seller-data-${curD[0]}_${curD[curD.length-1]}.csv`; a.click(); URL.revokeObjectURL(a.href);
+}
+$('#exportBtn').onclick=exportCSV;
 $('#pltChips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
   const p=c.dataset.plt;
   if(state.platforms.has(p)&&state.platforms.size>1){state.platforms.delete(p);c.classList.remove('on');}
@@ -607,9 +653,8 @@ $('#pltChips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
 $('#catSel').onchange=e=>{state.category=e.target.value;render();};
 $('#prodSearch').oninput=drawProducts;
 $('#nav').onclick=e=>{const a=e.target.closest('a');if(!a)return;
-  $('#nav').querySelectorAll('a').forEach(x=>x.classList.remove('active'));a.classList.add('active');
-  document.getElementById('sec-'+a.dataset.sec).scrollIntoView({behavior:'smooth',block:'start'});
-  $('#sidebar').classList.remove('open');};
+  state.tab=a.dataset.sec; render();
+  $('#sidebar').classList.remove('open'); window.scrollTo({top:0,behavior:'smooth'});};
 $('#menuToggle').onclick=()=>$('#sidebar').classList.toggle('open');
 
 function setTheme(t){document.documentElement.dataset.theme=t;
@@ -621,7 +666,10 @@ try{const t=localStorage.getItem('theme');if(t)setTheme(t);}catch(e){}
 function afterLoad(){
   $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
     DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
+  $('#dFrom').min=$('#dTo').min=DATA.meta.start_date;
+  $('#dFrom').max=$('#dTo').max=DATA.meta.end_date;
   render();
+  syncDateInputs();
 }
 // ---------- login + ดึงข้อมูลสดจาก /api/data ----------
 function showLogin(){$('#loginOverlay').style.display='flex';$('#logoutBtn').style.display='flex';
