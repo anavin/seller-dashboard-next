@@ -827,6 +827,16 @@ $('#nav').onclick=e=>{const a=e.target.closest('a');if(!a)return;
   $('#nav').querySelectorAll('a').forEach(x=>x.classList.remove('active'));a.classList.add('active');
   const sec=document.getElementById('sec-'+a.dataset.sec); if(sec)sec.scrollIntoView({behavior:'smooth',block:'start'});
   $('#sidebar').classList.remove('open');};
+// scrollspy: เลื่อนเนื้อหาถึงส่วนไหน ให้ไฮไลต์เมนูนั้นเอง
+(function(){
+  const obs=new IntersectionObserver(entries=>{
+    entries.forEach(en=>{ if(en.isIntersecting){
+      const k=en.target.id.replace('sec-','');
+      $('#nav').querySelectorAll('a').forEach(a=>a.classList.toggle('active', a.dataset.sec===k));
+    }});
+  },{rootMargin:'-45% 0px -50% 0px',threshold:0});
+  document.querySelectorAll('.section').forEach(s=>obs.observe(s));
+})();
 $('#menuToggle').onclick=()=>$('#sidebar').classList.toggle('open');
 
 function setTheme(t){document.documentElement.dataset.theme=t;
