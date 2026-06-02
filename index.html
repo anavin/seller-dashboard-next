@@ -307,11 +307,13 @@ const fmtK=n=>Math.abs(n)>=1e6?(n/1e6).toFixed(1)+'M':Math.abs(n)>=1e3?(n/1e3).t
 const $=s=>document.querySelector(s);
 let DATA=null, charts={};
 const state={win:30, platforms:new Set(['tiktok','shopee','lazada']), category:'all', mode:'preset', from:'', to:'', tab:'overview'};
+// ดักerror ที่ไม่ถูกจับ -> โชว์แทนการค้างเงียบ
+window.onerror=function(msg,src,line){var m=document.getElementById('metaLine');if(m)m.textContent='⚠️ '+msg+' (บรรทัด '+line+')';return false;};
 
 function cssvar(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
 function addDays(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
 function windowDates(end,win){const a=[];for(let i=win-1;i>=0;i--)a.push(addDays(end,-i));return a;}
-function datesBetween(a,b){const out=[];let d=a;while(d<=b){out.push(d);d=addDays(d,1);}return out;}
+function datesBetween(a,b){const out=[];let d=a,g=0;while(d<=b&&g++<2000){out.push(d);d=addDays(d,1);}return out;}
 function getWindows(){
   const end=DATA.meta.end_date;
   if(state.mode==='custom'&&state.from&&state.to){
@@ -721,8 +723,6 @@ try{const t=localStorage.getItem('theme');if(t)setTheme(t);}catch(e){}
 function afterLoad(){
   $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
     DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
-  $('#dFrom').min=$('#dTo').min=DATA.meta.start_date;
-  $('#dFrom').max=$('#dTo').max=DATA.meta.end_date;
   render();
   syncDateInputs();
 }
