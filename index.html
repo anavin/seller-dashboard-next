@@ -65,6 +65,7 @@
     color:var(--txt);font-size:13px;cursor:pointer;font-family:inherit}
   .dateinput{color-scheme:light}
   .content{padding:22px 24px;display:flex;flex-direction:column;gap:26px}
+  .section{scroll-margin-top:84px}
   .section h2{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:9px;color:var(--txt)}
   .section h2 .bar{width:4px;height:15px;background:var(--accent);border-radius:2px}
   .section h2 .hint{font-weight:400;font-size:12px;color:var(--soft);margin-left:auto}
@@ -346,11 +347,8 @@ const TAB_TITLES={overview:'ภาพรวมธุรกิจ',sales:'ยอ�
 function markEmpty(secId,isEmpty){const s=document.getElementById(secId); if(s)s.dataset.empty=isEmpty?'1':'';
   const nav=document.querySelector('#nav a[data-sec="'+secId.replace('sec-','')+'"]'); if(nav)nav.style.display=isEmpty?'none':'';}
 function applyVisibility(){
-  const cur=document.getElementById('sec-'+state.tab);
-  if(!cur || cur.dataset.empty==='1') state.tab='overview';
-  document.querySelectorAll('.section').forEach(s=>{ s.style.display=(s.id==='sec-'+state.tab)?'':'none'; });
-  $('#nav').querySelectorAll('a').forEach(a=>a.classList.toggle('active', a.dataset.sec===state.tab));
-  $('#pageTitle').textContent=TAB_TITLES[state.tab]||'ภาพรวมธุรกิจ';
+  // โหมดหน้ายาว: โชว์ทุกส่วน ยกเว้นส่วนที่ไม่มีข้อมูล (กำไร/โฆษณา)
+  document.querySelectorAll('.section').forEach(s=>{ s.style.display=(s.dataset.empty==='1')?'none':''; });
 }
 
 // ---------- aggregation ----------
@@ -826,8 +824,9 @@ $('#pltChips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
 $('#catSel').onchange=e=>{state.category=e.target.value;render();};
 $('#prodSearch').oninput=drawProducts;
 $('#nav').onclick=e=>{const a=e.target.closest('a');if(!a)return;
-  state.tab=a.dataset.sec; render();
-  $('#sidebar').classList.remove('open'); window.scrollTo({top:0,behavior:'smooth'});};
+  $('#nav').querySelectorAll('a').forEach(x=>x.classList.remove('active'));a.classList.add('active');
+  const sec=document.getElementById('sec-'+a.dataset.sec); if(sec)sec.scrollIntoView({behavior:'smooth',block:'start'});
+  $('#sidebar').classList.remove('open');};
 $('#menuToggle').onclick=()=>$('#sidebar').classList.toggle('open');
 
 function setTheme(t){document.documentElement.dataset.theme=t;
