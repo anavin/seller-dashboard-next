@@ -697,9 +697,12 @@ function exportCSV(){
   a.download=`seller-data-${curD[0]}_${curD[curD.length-1]}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 $('#exportBtn').onclick=exportCSV;
+<<<<<<< HEAD
 $('#kpiGrid').onclick=e=>{const c=e.target.closest('[data-kpi]'); if(c)openKpiDetail(c.dataset.kpi);};
 $('#kpiModalClose').onclick=()=>$('#kpiModal').style.display='none';
 $('#kpiModal').onclick=e=>{if(e.target.id==='kpiModal')$('#kpiModal').style.display='none';};
+=======
+>>>>>>> 3b7fa7456fb5d86de7836778bc733c23e627f2c3
 $('#pltChips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
   const p=c.dataset.plt;
   if(state.platforms.has(p)&&state.platforms.size>1){state.platforms.delete(p);c.classList.remove('on');}
