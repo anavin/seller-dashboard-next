@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seller Analytics — TikTok / Shopee / Lazada</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
@@ -207,9 +208,9 @@
         <span class="chip on lazada" data-plt="lazada"><span class="dot" style="background:var(--lazada)"></span>Lazada</span>
       </div>
       <select id="catSel"><option value="all">ทุกหมวดหมู่</option></select>
-      <input type="date" id="dFrom" class="dateinput" title="จากวันที่">
+      <select id="dFrom" class="dateinput" title="จากวันที่"></select>
       <span style="color:var(--soft);font-size:13px">–</span>
-      <input type="date" id="dTo" class="dateinput" title="ถึงวันที่">
+      <select id="dTo" class="dateinput" title="ถึงวันที่"></select>
       <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
     </div>
   </div>
@@ -222,6 +223,10 @@
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-8"><div class="ctitle">แนวโน้มยอดขายรายวัน</div><div class="csub">แยกตามแพลตฟอร์ม (พื้นที่ซ้อน)</div><div class="chart-wrap"><canvas id="trendChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">สัดส่วนยอดขายตามช่องทาง</div><div class="csub">ส่วนแบ่งรายได้</div><div class="chart-wrap"><canvas id="platChart"></canvas></div></div>
+      </div>
+      <div class="grid charts" style="margin-top:14px">
+        <div class="card c-6"><div class="ctitle">เปรียบเทียบรายเดือน</div><div class="csub">ยอดขายรวมต่อเดือน</div><div class="chart-wrap sm"><canvas id="monthlyChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">ยอดขายสะสม + AOV รายวัน</div><div class="csub">แท่ง=สะสม · เส้น=AOV/วัน</div><div class="chart-wrap sm"><canvas id="cumChart"></canvas></div></div>
       </div>
     </section>
 
@@ -236,12 +241,19 @@
         <div class="card c-4"><div class="ctitle">สถานะออเดอร์</div><div class="csub">สำเร็จ vs ยกเลิก/คืน</div><div class="chart-wrap sm"><canvas id="statusChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">ลูกค้าใหม่ vs ลูกค้าเก่า</div><div class="csub">ตามรายได้</div><div class="chart-wrap sm"><canvas id="custChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">AOV รายแพลตฟอร์ม</div><div class="csub">บาท/ออเดอร์</div><div class="chart-wrap sm"><canvas id="aovChart"></canvas></div></div>
+        <div class="card c-12"><div class="ctitle">🔥 ช่วงเวลาทอง — วัน × ชั่วโมง</div><div class="csub">สีเข้ม = ออเดอร์เยอะ (เลื่อนเมาส์ดูจำนวน)</div><div id="heatmap" style="overflow:auto;margin-top:8px"></div></div>
+        <div class="card c-6"><div class="ctitle">จำนวนชิ้นต่อออเดอร์</div><div class="csub">ออเดอร์ส่วนใหญ่ซื้อกี่ชิ้น</div><div class="chart-wrap sm"><canvas id="itemDistChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">การกระจายมูลค่าออเดอร์</div><div class="csub">ออเดอร์ส่วนใหญ่มูลค่าเท่าไหร่</div><div class="chart-wrap sm"><canvas id="valDistChart"></canvas></div></div>
       </div>
     </section>
 
     <!-- PRODUCTS -->
     <section class="section" id="sec-products">
-      <h2><span class="bar"></span>สินค้า (เรียง/ค้นหาได้)</h2>
+      <h2><span class="bar"></span>สินค้า</h2>
+      <div class="grid charts" style="margin-bottom:14px">
+        <div class="card c-4"><div class="ctitle">ยอดขายตามหมวดหมู่</div><div class="csub">สัดส่วนรายได้</div><div class="chart-wrap sm"><canvas id="prodCatChart"></canvas></div></div>
+        <div class="card c-8"><div class="ctitle">Pareto สินค้า (กฎ 20/80)</div><div class="csub">สินค้าไม่กี่ตัวทำรายได้ส่วนใหญ่ — เส้นคือยอดสะสม %</div><div class="chart-wrap sm"><canvas id="paretoChart"></canvas></div></div>
+      </div>
       <div class="card">
         <div class="tbl-tools">
           <input class="search" id="prodSearch" placeholder="🔍 ค้นหา SKU หรือชื่อสินค้า…">
@@ -279,6 +291,11 @@
     <section class="section" id="sec-inventory">
       <h2><span class="bar"></span>สต็อกสินค้า</h2>
       <div class="grid kpis" id="invKpi"></div>
+      <div class="card" style="margin-top:14px">
+        <div class="ctitle">📦 สต็อกอัจฉริยะ — จัดลำดับเติมด่วน</div>
+        <div class="csub">"เหลือกี่วัน" = สต็อก ÷ ความเร็วขาย (ชิ้น/วัน) · เรียงใกล้หมดสุดก่อน</div>
+        <div class="tbl-scroll" style="margin-top:10px"><table id="smartStockTable"></table></div>
+      </div>
       <div class="card" style="margin-top:14px">
         <div class="ctitle">⚠️ สินค้าใกล้หมด / หมดสต็อก (รวมทุกแพลตฟอร์ม &lt; 30 ชิ้น)</div>
         <div class="tbl-scroll" style="margin-top:10px"><table id="lowTable"></table></div>
@@ -497,9 +514,60 @@ function render(){
 
   renderSales(curSet,curD);
   renderProducts(curSet);
+  renderProductExtras(curSet);
   renderProfit(curSet,s,net,netp,ad);
   renderAds(curSet,curD,ad,adp,idx);
-  renderInventory();
+  renderInventory(curSet,curD.length);
+  renderTrends(curD);
+  renderHeatmap(curSet);
+  renderDist(curSet);
+}
+function renderTrends(curD){
+  const valid=ordersIn(new Set(curD)).filter(o=>o.status!=='cancelled'&&o.status!=='returned');
+  const byMonth={};
+  for(const o of valid){const m=o.date.slice(0,7); byMonth[m]=(byMonth[m]||0)+orderMatch(o).rev;}
+  const mks=Object.keys(byMonth).sort();
+  mk('monthlyChart',{type:'bar',data:{labels:mks,datasets:[{data:mks.map(m=>byMonth[m]),backgroundColor:cssvar('--accent'),borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  const idx=Object.fromEntries(curD.map((d,i)=>[d,i]));
+  const dRev=curD.map(()=>0), dOrd=curD.map(()=>0);
+  for(const o of valid){const i=idx[o.date]; if(i===undefined)continue; dRev[i]+=orderMatch(o).rev; dOrd[i]++;}
+  let run=0; const cum=dRev.map(v=>run+=v);
+  const aov=dRev.map((v,i)=>dOrd[i]?v/dOrd[i]:0);
+  mk('cumChart',{data:{labels:curD.map(d=>d.slice(5)),datasets:[
+    {type:'line',label:'ยอดสะสม',data:cum,borderColor:cssvar('--accent'),backgroundColor:cssvar('--accent')+'22',fill:true,tension:.3,pointRadius:0,yAxisID:'y'},
+    {type:'line',label:'AOV/วัน',data:aov,borderColor:'#f59e0b',pointRadius:0,tension:.3,borderDash:[4,3],yAxisID:'y1'}]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{x:{ticks:{maxTicksLimit:10}},y:{ticks:{callback:fmtK}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:fmtK}}}}});
+}
+function renderHeatmap(curSet){
+  const grid=Array.from({length:7},()=>Array(24).fill(0));
+  for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
+    const w=(new Date(o.date+'T00:00:00').getDay()+6)%7; grid[w][o.hour]++; }
+  const max=Math.max(1,...grid.flat());
+  const DN=['จ','อ','พ','พฤ','ศ','ส','อา'];
+  let h='<div style="display:grid;grid-template-columns:26px repeat(24,1fr);gap:3px;min-width:560px;font-size:10px">';
+  h+='<div></div>';
+  for(let x=0;x<24;x++)h+=`<div style="text-align:center;color:var(--soft)">${x%6===0?x:''}</div>`;
+  for(let d=0;d<7;d++){ h+=`<div style="color:var(--soft);display:flex;align-items:center">${DN[d]}</div>`;
+    for(let x=0;x<24;x++){const v=grid[d][x];const bg=v?`rgba(91,108,255,${(0.15+v/max*0.85).toFixed(2)})`:'var(--panel2)';
+      h+=`<div title="${DN[d]} ${x}:00 — ${v} ออเดอร์" style="height:18px;border-radius:3px;background:${bg}"></div>`;}}
+  h+='</div>';
+  const el=document.getElementById('heatmap'); if(el)el.innerHTML=h;
+}
+function renderDist(curSet){
+  const valid=ordersIn(curSet).filter(o=>o.status!=='cancelled'&&o.status!=='returned');
+  const ic={'1 ชิ้น':0,'2 ชิ้น':0,'3-4 ชิ้น':0,'5+ ชิ้น':0};
+  for(const o of valid){const n=o.items.reduce((s,i)=>s+i.qty,0);
+    ic[n<=1?'1 ชิ้น':n===2?'2 ชิ้น':n<=4?'3-4 ชิ้น':'5+ ชิ้น']++;}
+  mk('itemDistChart',{type:'bar',data:{labels:Object.keys(ic),datasets:[{data:Object.values(ic),backgroundColor:cssvar('--accent'),borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{precision:0}}}}});
+  const vb={'<300':0,'300-600':0,'600-1000':0,'1000+':0};
+  for(const o of valid){const g=o.items.reduce((s,i)=>s+i.qty*i.price,0);
+    vb[g<300?'<300':g<600?'300-600':g<1000?'600-1000':'1000+']++;}
+  mk('valDistChart',{type:'bar',data:{labels:Object.keys(vb),datasets:[{data:Object.values(vb),backgroundColor:'#10b981',borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{precision:0}}}}});
 }
 
 function renderSales(curSet,curD){
@@ -659,15 +727,63 @@ function renderAds(curSet,curD,ad,adp,idx){
       <td class="num">${c.cl?(c.o/c.cl*100).toFixed(2):0}%</td></tr>`;}).join('')+'</tbody>';
 }
 
-function renderInventory(){
+function renderProductExtras(curSet){
+  const valid=ordersIn(curSet).filter(o=>o.status!=='cancelled'&&o.status!=='returned');
+  const palette=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4','#ec4899'];
+  // หมวดหมู่ (donut)
+  const catRev={};
+  for(const o of valid)for(const i of o.items){ if(!i.category)continue; catRev[i.category]=(catRev[i.category]||0)+i.qty*i.price; }
+  const ck=Object.keys(catRev).sort((a,b)=>catRev[b]-catRev[a]);
+  if(ck.length) mk('prodCatChart',{type:'doughnut',data:{labels:ck,datasets:[{data:ck.map(c=>catRev[c]),
+    backgroundColor:ck.map((_,i)=>palette[i%palette.length]),borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  toggleCard('prodCatChart', ck.length>0);
+  // Pareto
+  const pr={};
+  for(const o of valid)for(const i of o.items){ const k=i.name||i.sku; pr[k]=(pr[k]||0)+i.qty*i.price; }
+  const sorted=Object.entries(pr).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  const total=Object.values(pr).reduce((a,b)=>a+b,0)||1;
+  let cum=0; const cumPct=sorted.map(x=>{cum+=x[1];return +(cum/total*100).toFixed(1);});
+  mk('paretoChart',{data:{labels:sorted.map(x=>x[0].length>14?x[0].slice(0,14)+'…':x[0]),
+    datasets:[
+      {type:'bar',label:'ยอดขาย',data:sorted.map(x=>x[1]),backgroundColor:cssvar('--accent'),borderRadius:5,yAxisID:'y'},
+      {type:'line',label:'สะสม %',data:cumPct,borderColor:'#f59e0b',backgroundColor:'#f59e0b',pointRadius:2,tension:.2,yAxisID:'y1'}]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}},
+        tooltip:{callbacks:{title:items=>sorted[items[0].dataIndex][0]}}},
+      scales:{x:{ticks:{maxRotation:60,minRotation:45,font:{size:9}}},y:{ticks:{callback:fmtK}},
+        y1:{position:'right',min:0,max:100,grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}}}});
+  toggleCard('paretoChart', sorted.length>0);
+}
+
+function renderInventory(curSet, windowDays){
   const prods=DATA.products.map(p=>({...p,total:p.stock.tiktok+p.stock.shopee+p.stock.lazada}));
   const out=prods.filter(p=>p.total===0).length;
   const low=prods.filter(p=>p.total<30).sort((a,b)=>a.total-b.total);
+  // ความเร็วขาย (ชิ้น/วัน) จากยอดขายในช่วง
+  const sold={};
+  if(curSet) for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
+    for(const i of o.items){ sold[i.sku]=(sold[i.sku]||0)+i.qty; } }
+  const days=Math.max(windowDays||30,1);
+  const stockValue=prods.reduce((s,p)=>s+p.total*(p.cost>0?p.cost:p.price),0);
   $('#invKpi').innerHTML=
     kpiCard('จำนวน SKU',fmt(prods.length))+
     kpiCard('หมดสต็อก',fmt(out)+' SKU')+
     kpiCard('ใกล้หมด (<30)',fmt(low.length)+' SKU')+
-    kpiCard('มูลค่าสต็อก (ตามต้นทุน)',fmt(prods.reduce((s,p)=>s+p.total*p.cost,0))+' ฿');
+    kpiCard('มูลค่าสต็อก',fmt(stockValue)+' ฿');
+  // ตารางสต็อกอัจฉริยะ
+  const smart=prods.map(p=>{const v=(sold[p.sku]||0)/days;
+      return {...p,vel:v,daysLeft:v>0?p.total/v:(p.total>0?Infinity:0)};})
+    .filter(p=>p.total>0).sort((a,b)=>a.daysLeft-b.daysLeft).slice(0,25);
+  $('#smartStockTable').innerHTML=`<thead><tr><th>SKU</th><th>สินค้า</th>
+    <th class="num">คงเหลือ</th><th class="num">ขาย/วัน</th><th class="num">เหลือกี่วัน</th><th>สถานะ</th></tr></thead><tbody>`+
+    (smart.length?smart.map(p=>{const dl=p.daysLeft;
+      const txt=dl===Infinity?'—':Math.round(dl)+' วัน';
+      const st=dl===Infinity?'<span class="muted">ยังไม่ขยับ</span>':dl<7?'<span class="pill-red">เติมด่วน</span>':dl<21?'<span class="pill-amber">ใกล้หมด</span>':'<span class="pos">พอ</span>';
+      return `<tr><td class="muted">${p.sku}</td><td>${p.name}</td>
+        <td class="num">${p.total}</td><td class="num">${p.vel.toFixed(1)}</td>
+        <td class="num">${txt}</td><td>${st}</td></tr>`;}).join('')
+      :'<tr><td colspan="6" class="muted">ไม่มีข้อมูล</td></tr>')+'</tbody>';
   $('#lowTable').innerHTML=`<thead><tr><th>SKU</th><th>สินค้า</th><th>หมวด</th>
     <th class="num">รวม</th><th class="num">TikTok</th><th class="num">Shopee</th><th class="num">Lazada</th><th>สถานะ</th></tr></thead><tbody>`+
     (low.length?low.map(p=>`<tr><td class="muted">${p.sku}</td><td>${p.name}</td>
@@ -723,6 +839,11 @@ try{const t=localStorage.getItem('theme');if(t)setTheme(t);}catch(e){}
 function afterLoad(){
   $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
     DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
+  // เติมรายการวันที่ลง dropdown เลือกช่วงเอง (เชื่อถือได้กว่าปฏิทินระบบ)
+  const allD = (DATA.meta.start_date && DATA.meta.end_date)
+    ? datesBetween(DATA.meta.start_date, DATA.meta.end_date) : [];
+  const opts = allD.map(d=>`<option value="${d}">${d}</option>`).join('');
+  $('#dFrom').innerHTML=opts; $('#dTo').innerHTML=opts;
   render();
   syncDateInputs();
 }
