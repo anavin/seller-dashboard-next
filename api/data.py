@@ -2,8 +2,11 @@
 Vercel Python serverless function: /api/data
 ดึงข้อมูล Lazada สด -> คืน JSON ให้หน้า dashboard (เช็ครหัสผ่านก่อน)
 
-ตั้ง Environment Variables ใน Vercel (Project → Settings → Environment Variables):
+Environment Variables (Vercel → Settings → Environment Variables):
     DASH_PASSWORD, LZ_APP_KEY, LZ_APP_SECRET, LZ_REFRESH_TOKEN
+    LOOKBACK_DAYS (ออปชัน, ค่าเริ่มต้น 120) = ดึงย้อนหลังกี่วัน
+
+ดูข้อมูลดิบเพื่อ debug: เปิด /api/data?pw=<รหัส>&debug=1
 """
 from http.server import BaseHTTPRequestHandler
 import os
@@ -13,12 +16,12 @@ import hmac
 import hashlib
 import datetime
 import urllib.parse
-from collections import defaultdict
 
 import requests
 
 LAZADA_BASE = "https://api.lazada.co.th/rest"
 AUTH_BASE = "https://auth.lazada.com/rest"
+LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "120"))
 
 
 def _sign(secret, path, params):
@@ -43,6 +46,14 @@ def _call(base, path, app_key, app_secret, access_token, extra=None):
     return d
 
 
+def _call_soft(base, path, app_key, app_secret, access, extra=None):
+    """เรียก API แบบไม่พัง — ถ้า error คืน None (ใช้กับข้อมูลเสริม)"""
+    try:
+        return _call(base, path, app_key, app_secret, access, extra)
+    except Exception:
+        return None
+
+
 def _refresh(app_key, app_secret, refresh_token):
     d = _call(AUTH_BASE, "/auth/token/refresh", app_key, app_secret, None,
               {"refresh_token": refresh_token})
@@ -58,14 +69,47 @@ def _hour(s):
         return 12
 
 
-def build_data():
+def _category_map(app_key, app_secret, access):
+    """ดึง category tree -> map id เป็นชื่อหมวดหมู่ (fail-soft)"""
+    d = _call_soft(LAZADA_BASE, "/category/tree/get", app_key, app_secret, access)
+    idname = {}
+    if not d:
+        return idname
+
+    def walk(nodes):
+        for n in nodes or []:
+            cid = n.get("category_id")
+            if cid is not None and n.get("name"):
+                idname[str(cid)] = n.get("name")
+            walk(n.get("children"))
+    walk(d.get("data") or [])
+    return idname
+
+
+def _finance_debug(app_key, app_secret, access, start, end):
+    """ลองเรียก finance API หลายแบบ เก็บผลดิบไว้ดู (ใช้เฉพาะ debug)"""
+    out = {}
+    sd, ed = start[:10], end[:10]
+    attempts = [
+        ("/finance/transaction/details/get", {"start_time": sd, "end_time": ed, "limit": 5, "offset": 0}),
+        ("/finance/transaction/accountTransactions/query", {"start_time": sd, "end_time": ed}),
+    ]
+    for path, extra in attempts:
+        try:
+            out[path] = _call(LAZADA_BASE, path, app_key, app_secret, access, extra)
+        except Exception as e:
+            out[path] = str(e)
+    return out
+
+
+def build_data(debug=False):
     app_key = os.environ["LZ_APP_KEY"]
     app_secret = os.environ["LZ_APP_SECRET"]
     refresh_token = os.environ["LZ_REFRESH_TOKEN"]
     access = _refresh(app_key, app_secret, refresh_token)
 
     now = datetime.datetime.now().astimezone()
-    start = (now - datetime.timedelta(days=60)).replace(microsecond=0).isoformat()
+    start = (now - datetime.timedelta(days=LOOKBACK_DAYS)).replace(microsecond=0).isoformat()
     end = now.replace(microsecond=0).isoformat()
 
     # ---- orders ----
@@ -79,7 +123,7 @@ def build_data():
         if len(batch) < 100:
             break
         offset += 100
-        if offset >= 2000:
+        if offset >= 5000:
             break
 
     # ---- items (batch ทีละ 50 ออเดอร์) ----
@@ -100,7 +144,7 @@ def build_data():
         items = [{
             "sku": it.get("sku") or it.get("shop_sku", ""),
             "name": it.get("name", ""),
-            "category": "",  # Lazada ไม่ส่งหมวดหมู่จริง (variation = ขนาด/รุ่น ไม่ใช่หมวด)
+            "category": "",
             "qty": 1,
             "price": float(it.get("paid_price") or it.get("item_price") or 0),
             "cost": 0.0,
@@ -117,7 +161,10 @@ def build_data():
             "items": items,
         })
 
-    # ---- products ----
+    # ---- products + หมวดหมู่จริง ----
+    idname = _category_map(app_key, app_secret, access)   # id -> ชื่อหมวด (fail-soft)
+    sku_cat = {}
+    raw_product_sample = None
     pmap = {}
     offset = 0
     while True:
@@ -126,32 +173,45 @@ def build_data():
         batch = d.get("data", {}).get("products", [])
         if not batch:
             break
+        if raw_product_sample is None:
+            raw_product_sample = batch[0]
         for p in batch:
             name = (p.get("attributes") or {}).get("name", "")
+            pcat = idname.get(str(p.get("primary_category") or ""), "")
             for sk in p.get("skus", [{}]):
                 sku = sk.get("SellerSku") or sk.get("ShopSku", "")
-                rec = pmap.setdefault(sku, {"sku": sku, "name": name, "category": "",
+                rec = pmap.setdefault(sku, {"sku": sku, "name": name, "category": pcat,
                                             "price": float(sk.get("price", 0) or 0),
                                             "cost": 0.0,
                                             "stock": {"tiktok": 0, "shopee": 0, "lazada": 0}})
+                rec["category"] = pcat or rec["category"]
                 rec["stock"]["lazada"] = int(sk.get("quantity", 0) or 0)
+                if pcat:
+                    sku_cat[sku] = pcat
         if len(batch) < 50:
             break
         offset += 50
-        if offset >= 2000:
+        if offset >= 5000:
             break
+
+    # เติมหมวดหมู่ให้ item ในออเดอร์ จาก map ของสินค้า
+    for r in order_rows:
+        for it in r["items"]:
+            if not it["category"]:
+                it["category"] = sku_cat.get(it["sku"], "")
 
     dates = sorted({r["date"] for r in order_rows if r["date"]})
     cats = sorted({i["category"] for r in order_rows for i in r["items"] if i["category"]})
     regions = sorted({r["region"] for r in order_rows if r["region"]})
 
-    return {
+    result = {
         "meta": {
             "currency": "THB",
             "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
             "start_date": dates[0] if dates else "",
             "end_date": dates[-1] if dates else "",
             "days": len(dates),
+            "lookback_days": LOOKBACK_DAYS,
             "platforms": ["tiktok", "shopee", "lazada"],
             "categories": cats,
             "regions": regions,
@@ -160,18 +220,29 @@ def build_data():
         "products": list(pmap.values()),
         "ads": [],
     }
+    if debug:
+        result["_debug"] = {
+            "lookback_days": LOOKBACK_DAYS,
+            "order_count": len(order_rows),
+            "category_tree_size": len(idname),
+            "category_sample": dict(list(idname.items())[:15]),
+            "product_sample": raw_product_sample,
+            "finance": _finance_debug(app_key, app_secret, access, start, end),
+        }
+    return result
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        qs = urllib.parse.urlparse(self.path).query
-        pw = urllib.parse.parse_qs(qs).get("pw", [""])[0]
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        pw = qs.get("pw", [""])[0]
+        debug = qs.get("debug", ["0"])[0] in ("1", "true", "yes")
         if pw != os.environ.get("DASH_PASSWORD", ""):
             self._send(401, {"error": "unauthorized"})
             return
         try:
-            data = build_data()
-            self._send(200, data, cache=True)
+            data = build_data(debug=debug)
+            self._send(200, data, cache=not debug)
         except Exception as e:
             self._send(500, {"error": str(e)})
 
