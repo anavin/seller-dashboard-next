@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seller Analytics — TikTok / Shopee / Lazada</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#f8fafc; --line:#e6e9f0;
+    --txt:#1a2233; --muted:#6b7280; --soft:#9aa3b2;
+    --accent:#5b6cff; --accent-soft:#eef0ff;
+    --tiktok:#ff2d55; --shopee:#ee4d2d; --lazada:#5b6cff;
+    --green:#10b981; --red:#ef4444; --amber:#f59e0b;
+    --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+    --shadow-lg:0 8px 24px rgba(16,24,40,.08);
+    --radius:14px;
+  }
+  [data-theme="dark"]{
+    --bg:#0c0e14; --panel:#151823; --panel2:#1b1f2b; --line:#262b3a;
+    --txt:#e8eaf0; --muted:#9aa0b0; --soft:#6b7280;
+    --accent:#7c8cff; --accent-soft:#1e2440;
+    --shadow:0 1px 3px rgba(0,0,0,.4); --shadow-lg:0 10px 30px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Inter","Segoe UI","Noto Sans Thai",sans-serif;background:var(--bg);
+    color:var(--txt);display:flex;min-height:100vh;font-size:14px;-webkit-font-smoothing:antialiased}
+  /* ---------- Sidebar ---------- */
+  .sidebar{width:230px;background:var(--panel);border-right:1px solid var(--line);
+    padding:20px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;flex-shrink:0}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px;font-weight:700;font-size:16px}
+  .brand .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5b6cff,#9b5bff);
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+  .nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+  .nav a{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;color:var(--muted);
+    text-decoration:none;font-weight:500;transition:.15s;cursor:pointer}
+  .nav a:hover{background:var(--panel2);color:var(--txt)}
+  .nav a.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .nav a .ic{width:18px;text-align:center}
+  .side-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--line)}
+  .theme-btn{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-size:13px}
+  .theme-btn:hover{color:var(--txt)}
+  /* ---------- Main ---------- */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);
+    padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .topbar h1{font-size:17px;font-weight:700}
+  .topbar .meta{font-size:12px;color:var(--soft);margin-top:2px}
+  .filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .seg{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{border:0;background:transparent;color:var(--muted);padding:7px 12px;cursor:pointer;font-size:13px;font-weight:500}
+  .seg button.active{background:var(--accent);color:#fff}
+  .chips{display:flex;gap:6px}
+  .chip{display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:20px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;user-select:none}
+  .chip .dot{width:8px;height:8px;border-radius:50%}
+  .chip.on{color:var(--txt);border-color:transparent}
+  .chip.on.tiktok{background:rgba(255,45,85,.12);border-color:rgba(255,45,85,.4)}
+  .chip.on.shopee{background:rgba(238,77,45,.12);border-color:rgba(238,77,45,.4)}
+  .chip.on.lazada{background:rgba(91,108,255,.14);border-color:rgba(91,108,255,.45)}
+  .chip:not(.on) .dot{background:var(--soft)!important}
+  select{padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);
+    color:var(--txt);font-size:13px;cursor:pointer;font-family:inherit}
+  .content{padding:22px 24px;display:flex;flex-direction:column;gap:26px}
+  .section h2{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:9px;color:var(--txt)}
+  .section h2 .bar{width:4px;height:15px;background:var(--accent);border-radius:2px}
+  .section h2 .hint{font-weight:400;font-size:12px;color:var(--soft);margin-left:auto}
+  /* ---------- Cards / grid ---------- */
+  .grid{display:grid;gap:14px}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .kpi{position:relative;overflow:hidden}
+  .kpi .label{color:var(--muted);font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px}
+  .kpi .value{font-size:25px;font-weight:700;margin-top:7px;letter-spacing:-.5px}
+  .kpi .foot{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;min-height:18px}
+  .kpi .spark{position:absolute;right:10px;bottom:8px;width:78px;height:34px;opacity:.85}
+  .delta{font-weight:600;padding:1px 6px;border-radius:6px;font-size:11px}
+  .delta.up{color:var(--green);background:rgba(16,185,129,.12)}
+  .delta.down{color:var(--red);background:rgba(239,68,68,.12)}
+  .delta.flat{color:var(--soft);background:var(--panel2)}
+  .vs{color:var(--soft);font-size:11px}
+  .charts{grid-template-columns:repeat(12,1fr)}
+  .c-12{grid-column:span 12}.c-8{grid-column:span 8}.c-7{grid-column:span 7}
+  .c-6{grid-column:span 6}.c-5{grid-column:span 5}.c-4{grid-column:span 4}
+  @media(max-width:980px){.charts > *{grid-column:span 12!important}}
+  .card .ctitle{font-size:13px;font-weight:600;margin-bottom:4px}
+  .card .csub{font-size:11px;color:var(--soft);margin-bottom:10px}
+  .chart-wrap{position:relative;height:280px}
+  .chart-wrap.sm{height:230px}
+  canvas{max-width:100%}
+  /* ---------- Table ---------- */
+  .tbl-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .search{padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--txt);font-size:13px;min-width:200px;font-family:inherit}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel)}
+  th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+  th:hover{color:var(--txt)}
+  tbody tr:hover{background:var(--panel2)}
+  .tag{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:600;display:inline-block}
+  .t-tiktok{background:rgba(255,45,85,.14);color:#ff2d55}
+  .t-shopee{background:rgba(238,77,45,.14);color:#ee4d2d}
+  .t-lazada{background:rgba(91,108,255,.16);color:#5b6cff}
+  .t-cat{background:var(--panel2);color:var(--muted)}
+  .mini{height:7px;border-radius:5px;background:var(--panel2);overflow:hidden;display:inline-block;width:80px;vertical-align:middle}
+  .mini > i{display:block;height:100%;border-radius:5px;background:var(--accent)}
+  .pos{color:var(--green);font-weight:600}.neg{color:var(--red);font-weight:600}
+  .pill-red{color:var(--red);font-weight:600}.pill-amber{color:var(--amber);font-weight:600}
+  .tbl-scroll{max-height:430px;overflow:auto;border-radius:10px}
+  .badge{font-size:11px;color:var(--soft)}
+  .muted{color:var(--muted)}
+  .menu-toggle{display:none}
+  @media(max-width:840px){
+    .sidebar{position:fixed;left:-240px;z-index:50;transition:.25s;box-shadow:var(--shadow-lg)}
+    .sidebar.open{left:0}
+    .menu-toggle{display:inline-flex}
+  }
+  /* ---------- Login overlay ---------- */
+  #loginOverlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#0c0e14,#1a1d3a);padding:20px}
+  .login-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    padding:34px 30px;width:100%;max-width:360px;text-align:center;box-shadow:var(--shadow-lg)}
+  .login-logo{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#5b6cff,#9b5bff);
+    display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px}
+  .login-card h2{font-size:19px;font-weight:700;margin-bottom:4px}
+  .login-card p{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .login-card input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;
+    background:var(--panel2);color:var(--txt);font-size:15px;font-family:inherit;margin-bottom:12px}
+  .login-card input:focus{outline:none;border-color:var(--accent)}
+  .login-card button{width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent);
+    color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+  .login-card button:hover{opacity:.92}
+  .login-err{color:var(--red);font-size:13px;min-height:18px;margin-top:10px}
+  .login-foot{color:var(--soft);font-size:11px;margin-top:16px}
+</style>
+</head>
+<body>
+<div id="loginOverlay">
+  <div class="login-card">
+    <div class="login-logo">📊</div>
+    <h2>Seller Analytics</h2>
+    <p>กรอกรหัสผ่านเพื่อเข้าดูแดชบอร์ด</p>
+    <input id="loginPw" type="password" placeholder="รหัสผ่าน" autocomplete="current-password">
+    <button id="loginBtn">เข้าสู่ระบบ</button>
+    <div class="login-err" id="loginErr"></div>
+    <div class="login-foot">🔒 ข้อมูลถูกเข้ารหัส AES-256 · ถอดรหัสในเครื่องคุณเท่านั้น</div>
+  </div>
+</div>
+<aside class="sidebar" id="sidebar">
+  <div class="brand"><span class="logo">📊</span> Seller Analytics</div>
+  <nav class="nav" id="nav">
+    <a data-sec="overview" class="active"><span class="ic">▦</span> ภาพรวม</a>
+    <a data-sec="sales"><span class="ic">📈</span> ยอดขาย</a>
+    <a data-sec="products"><span class="ic">📦</span> สินค้า</a>
+    <a data-sec="profit"><span class="ic">💰</span> กำไร</a>
+    <a data-sec="ads"><span class="ic">🎯</span> โฆษณา</a>
+    <a data-sec="inventory"><span class="ic">🏷️</span> สต็อก</a>
+  </nav>
+  <div class="side-foot">
+    <button class="theme-btn" id="themeBtn"><span id="themeIc">🌙</span> <span id="themeTxt">โหมดมืด</span></button>
+    <button class="theme-btn" id="logoutBtn" style="margin-top:6px;display:none">🔓 ออกจากระบบ</button>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="theme-btn menu-toggle" id="menuToggle" style="width:auto;padding:8px 10px">☰</button>
+      <div>
+        <h1 id="pageTitle">ภาพรวมธุรกิจ</h1>
+        <div class="meta" id="metaLine">กำลังโหลด…</div>
+      </div>
+    </div>
+    <div class="filters">
+      <div class="seg" id="winSeg">
+        <button data-win="7">7 วัน</button>
+        <button data-win="14">14 วัน</button>
+        <button data-win="30" class="active">30 วัน</button>
+        <button data-win="60">60 วัน</button>
+      </div>
+      <div class="chips" id="pltChips">
+        <span class="chip on tiktok" data-plt="tiktok"><span class="dot" style="background:var(--tiktok)"></span>TikTok</span>
+        <span class="chip on shopee" data-plt="shopee"><span class="dot" style="background:var(--shopee)"></span>Shopee</span>
+        <span class="chip on lazada" data-plt="lazada"><span class="dot" style="background:var(--lazada)"></span>Lazada</span>
+      </div>
+      <select id="catSel"><option value="all">ทุกหมวดหมู่</option></select>
+    </div>
+  </div>
+
+  <div class="content">
+    <!-- OVERVIEW -->
+    <section class="section" id="sec-overview">
+      <h2><span class="bar"></span>ภาพรวม <span class="hint" id="ovHint"></span></h2>
+      <div class="grid kpis" id="kpiGrid"></div>
+      <div class="grid charts" style="margin-top:14px">
+        <div class="card c-8"><div class="ctitle">แนวโน้มยอดขายรายวัน</div><div class="csub">แยกตามแพลตฟอร์ม (พื้นที่ซ้อน)</div><div class="chart-wrap"><canvas id="trendChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">สัดส่วนยอดขายตามช่องทาง</div><div class="csub">ส่วนแบ่งรายได้</div><div class="chart-wrap"><canvas id="platChart"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- SALES -->
+    <section class="section" id="sec-sales">
+      <h2><span class="bar"></span>ยอดขายทุกมิติ</h2>
+      <div class="grid charts">
+        <div class="card c-6"><div class="ctitle">ยอดขายตามหมวดหมู่</div><div class="csub">รายได้รวมในช่วงที่เลือก</div><div class="chart-wrap sm"><canvas id="catChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">ยอดขายเฉลี่ยตามวันในสัปดาห์</div><div class="csub">เฉลี่ยต่อวัน (ส้ม = เสาร์-อาทิตย์)</div><div class="chart-wrap sm"><canvas id="dowChart"></canvas></div></div>
+        <div class="card c-7"><div class="ctitle">ออเดอร์ตามช่วงเวลาของวัน</div><div class="csub">ชั่วโมงที่ลูกค้าสั่งซื้อมากที่สุด</div><div class="chart-wrap sm"><canvas id="hourChart"></canvas></div></div>
+        <div class="card c-5"><div class="ctitle">ยอดขายตามภูมิภาค</div><div class="csub">Top จังหวัด/ภูมิภาค</div><div class="chart-wrap sm"><canvas id="regionChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">สถานะออเดอร์</div><div class="csub">สำเร็จ vs ยกเลิก/คืน</div><div class="chart-wrap sm"><canvas id="statusChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">ลูกค้าใหม่ vs ลูกค้าเก่า</div><div class="csub">ตามรายได้</div><div class="chart-wrap sm"><canvas id="custChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">AOV รายแพลตฟอร์ม</div><div class="csub">บาท/ออเดอร์</div><div class="chart-wrap sm"><canvas id="aovChart"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- PRODUCTS -->
+    <section class="section" id="sec-products">
+      <h2><span class="bar"></span>สินค้า (เรียง/ค้นหาได้)</h2>
+      <div class="card">
+        <div class="tbl-tools">
+          <input class="search" id="prodSearch" placeholder="🔍 ค้นหา SKU หรือชื่อสินค้า…">
+          <span class="badge" id="prodCount"></span>
+        </div>
+        <div class="tbl-scroll"><table id="prodTable"></table></div>
+      </div>
+    </section>
+
+    <!-- PROFIT -->
+    <section class="section" id="sec-profit">
+      <h2><span class="bar"></span>กำไร &amp; ต้นทุน</h2>
+      <div class="grid kpis" id="profitKpi"></div>
+      <div class="grid charts" style="margin-top:14px">
+        <div class="card c-6"><div class="ctitle">โครงสร้างกำไร (Waterfall)</div><div class="csub">จากยอดขายถึงกำไรสุทธิ</div><div class="chart-wrap"><canvas id="waterfallChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">กำไรขั้นต้นตามหมวดหมู่</div><div class="csub">รายได้ − ต้นทุนสินค้า</div><div class="chart-wrap"><canvas id="profitCatChart"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- ADS -->
+    <section class="section" id="sec-ads">
+      <h2><span class="bar"></span>โฆษณา &amp; การตลาด <span class="hint">ตัวเลขโฆษณาไม่กรองตามหมวดหมู่</span></h2>
+      <div class="grid kpis" id="adsKpi"></div>
+      <div class="grid charts" style="margin-top:14px">
+        <div class="card c-7"><div class="ctitle">ค่าโฆษณา vs ยอดขายจากโฆษณา</div><div class="csub">รายวัน</div><div class="chart-wrap"><canvas id="adTrendChart"></canvas></div></div>
+        <div class="card c-5"><div class="ctitle">ROAS รายแพลตฟอร์ม</div><div class="csub">ยิ่งสูงยิ่งคุ้ม (เป้า ≥ 3x)</div><div class="chart-wrap"><canvas id="roasChart"></canvas></div></div>
+        <div class="card c-12">
+          <div class="ctitle">ประสิทธิภาพรายแคมเปญ</div>
+          <div class="tbl-scroll" style="margin-top:10px"><table id="adTable"></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INVENTORY -->
+    <section class="section" id="sec-inventory">
+      <h2><span class="bar"></span>สต็อกสินค้า</h2>
+      <div class="grid kpis" id="invKpi"></div>
+      <div class="card" style="margin-top:14px">
+        <div class="ctitle">⚠️ สินค้าใกล้หมด / หมดสต็อก (รวมทุกแพลตฟอร์ม &lt; 30 ชิ้น)</div>
+        <div class="tbl-scroll" style="margin-top:10px"><table id="lowTable"></table></div>
+      </div>
+    </section>
+
+    <div style="text-align:center;color:var(--soft);font-size:12px;padding:8px 0 20px">
+      อัปเดตข้อมูล: รัน <code>python run.py</code> แล้ว push ขึ้น GitHub · ข้อมูลคำนวณสดในเบราว์เซอร์ตามฟิลเตอร์
+    </div>
+  </div>
+</div>
+
+<script>
+const PLT={tiktok:{name:'TikTok',c:'#ff2d55'},shopee:{name:'Shopee',c:'#ee4d2d'},lazada:{name:'Lazada',c:'#5b6cff'}};
+const DOW=['จ','อ','พ','พฤ','ศ','ส','อา']; // Monday-first
+const fmt=n=>Math.round(n).toLocaleString('th-TH');
+const fmt2=n=>Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtK=n=>Math.abs(n)>=1e6?(n/1e6).toFixed(1)+'M':Math.abs(n)>=1e3?(n/1e3).toFixed(1)+'k':Math.round(n);
+const $=s=>document.querySelector(s);
+let DATA=null, charts={};
+const state={win:30, platforms:new Set(['tiktok','shopee','lazada']), category:'all'};
+
+function cssvar(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function addDays(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
+function windowDates(end,win){const a=[];for(let i=win-1;i>=0;i--)a.push(addDays(end,-i));return a;}
+
+// ---------- aggregation ----------
+function matchCat(it){return state.category==='all'||it.category===state.category;}
+function orderG(o){return o.items.reduce((s,i)=>s+i.qty*i.price,0);}
+function orderMatch(o){let rev=0,units=0,cogs=0;
+  for(const i of o.items){if(matchCat(i)){rev+=i.qty*i.price;units+=i.qty;cogs+=i.qty*i.cost;}}
+  return {rev,units,cogs};}
+function ordersIn(dateSet){return DATA.orders.filter(o=>state.platforms.has(o.platform)&&dateSet.has(o.date));}
+function aggSales(dateSet){
+  let rev=0,units=0,cogs=0,fee=0,ship=0,oc=0,cancel=0;
+  for(const o of ordersIn(dateSet)){
+    const m=orderMatch(o);
+    if(o.status==='cancelled'||o.status==='returned'){ if(m.rev>0)cancel++; continue; }
+    if(m.rev<=0)continue;
+    const g=orderG(o);
+    rev+=m.rev;units+=m.units;cogs+=m.cogs;
+    fee+=g>0?o.platform_fee*(m.rev/g):0; ship+=o.shipping_fee; oc++;
+  }
+  const cancelRate=(oc+cancel)?cancel/(oc+cancel)*100:0;
+  return {rev,units,cogs,fee,ship,orders:oc,cancel,cancelRate,aov:oc?rev/oc:0,grossProfit:rev-cogs};
+}
+function aggAds(dateSet){
+  let spend=0,rev=0,clicks=0,imps=0,ord=0;
+  for(const a of DATA.ads){ if(!state.platforms.has(a.platform)||!dateSet.has(a.date))continue;
+    spend+=a.spend;rev+=a.revenue;clicks+=a.clicks;imps+=a.impressions;ord+=a.orders;}
+  return {spend,rev,clicks,imps,ord,roas:spend?rev/spend:0,ctr:imps?clicks/imps*100:0,
+          cvr:clicks?ord/clicks*100:0,cpc:clicks?spend/clicks:0};
+}
+function delta(cur,prev){
+  if(!prev)return{cls:'flat',txt:'—'};
+  const p=(cur-prev)/Math.abs(prev)*100;
+  return{cls:p>0.5?'up':p<-0.5?'down':'flat',txt:(p>0?'▲':p<0?'▼':'')+Math.abs(p).toFixed(1)+'%'};
+}
+
+// ---------- chart helpers ----------
+function mk(id,cfg){ if(charts[id])charts[id].destroy(); const el=document.getElementById(id); if(el)charts[id]=new Chart(el,cfg); }
+function applyChartTheme(){Chart.defaults.color=cssvar('--muted');Chart.defaults.borderColor=cssvar('--line');
+  Chart.defaults.font.family='Inter, Noto Sans Thai, sans-serif';}
+
+function kpiCard(label,value,d,sparkId){
+  const dd=d?`<span class="delta ${d.cls}">${d.txt}</span><span class="vs">vs ช่วงก่อน</span>`:'';
+  const sp=sparkId?`<canvas class="spark" id="${sparkId}"></canvas>`:'';
+  return `<div class="card kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="foot">${dd}</div>${sp}</div>`;
+}
+function spark(id,arr,color){
+  if(!document.getElementById(id))return;
+  mk(id,{type:'line',data:{labels:arr.map((_,i)=>i),datasets:[{data:arr,borderColor:color,
+    borderWidth:2,pointRadius:0,tension:.4,fill:true,
+    backgroundColor:ctx=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,34);g.addColorStop(0,color+'55');g.addColorStop(1,color+'00');return g;}}]},
+    options:{plugins:{legend:{display:false},tooltip:{enabled:false}},
+      scales:{x:{display:false},y:{display:false}},animation:false,maintainAspectRatio:false}});
+}
+
+// ---------- main ----------
+function render(){
+  applyChartTheme();
+  const end=DATA.meta.end_date;
+  const curD=windowDates(end,state.win), prevD=windowDates(addDays(curD[0],-1),state.win);
+  const curSet=new Set(curD), prevSet=new Set(prevD);
+  const s=aggSales(curSet), sp=aggSales(prevSet);
+  const ad=aggAds(curSet), adp=aggAds(prevSet);
+  const net=s.rev-s.cogs-s.fee-ad.spend, netp=sp.rev-sp.cogs-sp.fee-adp.spend;
+  const margin=s.rev?net/s.rev*100:0, marginp=sp.rev?netp/sp.rev*100:0;
+
+  $('#metaLine').textContent=`${curD[0]} ถึง ${end} · ${state.win} วัน · ${DATA.meta.currency} · อัปเดต ${DATA.meta.generated_at.replace('T',' ')}`;
+  $('#ovHint').textContent=`เทียบกับ ${state.win} วันก่อนหน้า`;
+
+  // daily revenue per platform
+  const daily={}; for(const p of DATA.meta.platforms)daily[p]=curD.map(()=>0);
+  const idx=Object.fromEntries(curD.map((d,i)=>[d,i]));
+  for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
+    const m=orderMatch(o); if(m.rev<=0)continue; daily[o.platform][idx[o.date]]+=m.rev; }
+  const dailyTotal=curD.map((_,i)=>DATA.meta.platforms.reduce((t,p)=>t+daily[p][i],0));
+
+  $('#kpiGrid').innerHTML=
+    kpiCard('ยอดขายรวม',fmt(s.rev)+' ฿',delta(s.rev,sp.rev),'spkRev')+
+    kpiCard('ออเดอร์',fmt(s.orders),delta(s.orders,sp.orders),'spkOrd')+
+    kpiCard('กำไรสุทธิ',fmt(net)+' ฿',delta(net,netp),'spkNet')+
+    kpiCard('AOV',fmt(s.aov)+' ฿',delta(s.aov,sp.aov))+
+    kpiCard('อัตรากำไรสุทธิ',margin.toFixed(1)+'%',delta(margin,marginp))+
+    kpiCard('ROAS โฆษณา',ad.roas.toFixed(2)+'x',delta(ad.roas,adp.roas))+
+    kpiCard('จำนวนชิ้นที่ขาย',fmt(s.units),delta(s.units,sp.units))+
+    kpiCard('อัตรายกเลิก/คืน',s.cancelRate.toFixed(1)+'%',delta(sp.cancelRate,s.cancelRate));
+  spark('spkRev',dailyTotal,PLT.lazada.c);
+  const dOrders=curD.map(()=>0);
+  for(const o of ordersIn(curSet)){if(o.status==='cancelled'||o.status==='returned')continue;const m=orderMatch(o);if(m.rev>0)dOrders[idx[o.date]]++;}
+  spark('spkOrd',dOrders,'#10b981');
+  spark('spkNet',dailyTotal.map(v=>v*(margin/100)),'#f59e0b');
+
+  mk('trendChart',{type:'line',data:{labels:curD.map(d=>d.slice(5)),
+    datasets:DATA.meta.platforms.filter(p=>state.platforms.has(p)).map(p=>({
+      label:PLT[p].name,data:daily[p],borderColor:PLT[p].c,backgroundColor:PLT[p].c+'22',
+      fill:true,tension:.35,pointRadius:0,borderWidth:2}))},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{y:{stacked:true,ticks:{callback:fmtK}},x:{stacked:true,ticks:{maxTicksLimit:12}}}}});
+
+  const pr=DATA.meta.platforms.filter(p=>state.platforms.has(p));
+  mk('platChart',{type:'doughnut',data:{labels:pr.map(p=>PLT[p].name),
+    datasets:[{data:pr.map(p=>daily[p].reduce((a,b)=>a+b,0)),backgroundColor:pr.map(p=>PLT[p].c),borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'64%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+
+  renderSales(curSet,curD);
+  renderProducts(curSet);
+  renderProfit(curSet,s,net,netp,ad);
+  renderAds(curSet,curD,ad,adp,idx);
+  renderInventory();
+}
+
+function renderSales(curSet,curD){
+  const accent=cssvar('--accent');
+  const catRev={}; for(const c of DATA.meta.categories)catRev[c]=0;
+  const regRev={}, stat={completed:0,cancelled:0,returned:0}, cust={new:0,returning:0};
+  const dowSum=Array(7).fill(0), hour=Array(24).fill(0);
+  const aovP={}; DATA.meta.platforms.forEach(p=>aovP[p]={rev:0,n:0});
+  const dowOcc=Array(7).fill(0); curD.forEach(d=>{dowOcc[(new Date(d+'T00:00:00').getDay()+6)%7]++;});
+  for(const o of ordersIn(curSet)){
+    const cancelled=(o.status==='cancelled'||o.status==='returned');
+    if(cancelled){stat[o.status]++;}
+    if(!cancelled){for(const i of o.items){ if(catRev[i.category]!==undefined)catRev[i.category]+=i.qty*i.price; }}
+    const m=orderMatch(o); if(m.rev<=0||cancelled)continue;
+    stat.completed++;
+    regRev[o.region]=(regRev[o.region]||0)+m.rev;
+    cust[o.customer]=(cust[o.customer]||0)+m.rev;
+    dowSum[(new Date(o.date+'T00:00:00').getDay()+6)%7]+=m.rev;
+    hour[o.hour]+=1;
+    aovP[o.platform].rev+=m.rev; aovP[o.platform].n++;
+  }
+  const cats=Object.keys(catRev);
+  mk('catChart',{type:'bar',data:{labels:cats,datasets:[{data:cats.map(c=>catRev[c]),backgroundColor:accent,borderRadius:6}]},
+    options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:fmtK}}}}});
+  mk('dowChart',{type:'bar',data:{labels:DOW,datasets:[{data:dowSum.map((v,i)=>dowOcc[i]?v/dowOcc[i]:0),
+    backgroundColor:DOW.map((_,i)=>i>=5?'#f59e0b':accent),borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  mk('hourChart',{type:'bar',data:{labels:[...Array(24).keys()].map(h=>h+':00'),datasets:[{data:hour,backgroundColor:accent,borderRadius:4}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:12}},y:{ticks:{precision:0}}}}});
+  const regs=Object.keys(regRev).sort((a,b)=>regRev[b]-regRev[a]);
+  mk('regionChart',{type:'bar',data:{labels:regs,datasets:[{data:regs.map(r=>regRev[r]),backgroundColor:'#9b5bff',borderRadius:6}]},
+    options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:fmtK}}}}});
+  mk('statusChart',{type:'doughnut',data:{labels:['สำเร็จ','ยกเลิก','คืนสินค้า'],
+    datasets:[{data:[stat.completed,stat.cancelled,stat.returned],backgroundColor:['#10b981','#ef4444','#f59e0b'],borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  mk('custChart',{type:'doughnut',data:{labels:['ลูกค้าใหม่','ลูกค้าเก่า'],
+    datasets:[{data:[cust.new,cust.returning],backgroundColor:['#5b6cff','#10b981'],borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  const ap=DATA.meta.platforms.filter(p=>state.platforms.has(p));
+  mk('aovChart',{type:'bar',data:{labels:ap.map(p=>PLT[p].name),
+    datasets:[{data:ap.map(p=>aovP[p].n?aovP[p].rev/aovP[p].n:0),backgroundColor:ap.map(p=>PLT[p].c),borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+}
+
+let prodCache=[], prodSort={key:'revenue',dir:-1};
+function renderProducts(curSet){
+  const map={};
+  for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
+    for(const i of o.items){ if(!matchCat(i))continue;
+      const r=map[i.sku]||(map[i.sku]={sku:i.sku,name:i.name,category:i.category,units:0,revenue:0,profit:0});
+      r.units+=i.qty; r.revenue+=i.qty*i.price; r.profit+=i.qty*(i.price-i.cost); }}
+  prodCache=Object.values(map).map(r=>({...r,margin:r.revenue?r.profit/r.revenue*100:0}));
+  drawProducts();
+}
+function drawProducts(){
+  const q=($('#prodSearch').value||'').toLowerCase();
+  let rows=prodCache.filter(r=>r.sku.toLowerCase().includes(q)||r.name.toLowerCase().includes(q));
+  const k=prodSort.key,d=prodSort.dir;
+  rows.sort((a,b)=>typeof a[k]==='string'?d*a[k].localeCompare(b[k]):d*(a[k]-b[k]));
+  const max=Math.max(1,...rows.map(r=>r.revenue));
+  const arrow=key=>prodSort.key===key?(prodSort.dir<0?' ↓':' ↑'):'';
+  $('#prodCount').textContent=rows.length+' รายการ';
+  $('#prodTable').innerHTML=
+    `<thead><tr>
+      <th data-k="sku">SKU${arrow('sku')}</th><th data-k="name">สินค้า${arrow('name')}</th>
+      <th data-k="category">หมวด${arrow('category')}</th>
+      <th class="num" data-k="units">ขาย${arrow('units')}</th>
+      <th class="num" data-k="revenue">ยอดขาย${arrow('revenue')}</th>
+      <th class="num" data-k="profit">กำไร${arrow('profit')}</th>
+      <th class="num" data-k="margin">มาร์จิน${arrow('margin')}</th>
+      <th>สัดส่วน</th></tr></thead><tbody>`+
+    rows.map(r=>`<tr>
+      <td class="muted">${r.sku}</td><td>${r.name}</td>
+      <td><span class="tag t-cat">${r.category}</span></td>
+      <td class="num">${fmt(r.units)}</td>
+      <td class="num">${fmt(r.revenue)}</td>
+      <td class="num ${r.profit>=0?'pos':'neg'}">${fmt(r.profit)}</td>
+      <td class="num">${r.margin.toFixed(1)}%</td>
+      <td><span class="mini"><i style="width:${r.revenue/max*100}%"></i></span></td></tr>`).join('')
+    +'</tbody>';
+  $('#prodTable').querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; prodSort.dir=prodSort.key===k?-prodSort.dir:(k==='sku'||k==='name'||k==='category'?1:-1);
+    prodSort.key=k; drawProducts();});
+}
+
+function renderProfit(curSet,s,net,netp,ad){
+  $('#profitKpi').innerHTML=
+    kpiCard('ยอดขาย',fmt(s.rev)+' ฿')+
+    kpiCard('ต้นทุนสินค้า (COGS)',fmt(s.cogs)+' ฿')+
+    kpiCard('ค่าธรรมเนียมแพลตฟอร์ม',fmt(s.fee)+' ฿')+
+    kpiCard('ค่าโฆษณา',fmt(ad.spend)+' ฿')+
+    kpiCard('กำไรขั้นต้น',fmt(s.grossProfit)+' ฿')+
+    kpiCard('กำไรสุทธิ',fmt(net)+' ฿',delta(net,netp));
+  mk('waterfallChart',{type:'bar',data:{labels:['ยอดขาย','ต้นทุน','ค่าธรรมเนียม','ค่าโฆษณา','กำไรสุทธิ'],
+    datasets:[{data:[s.rev,-s.cogs,-s.fee,-ad.spend,net],
+      backgroundColor:['#5b6cff','#ef4444','#f59e0b','#fb923c','#10b981'],borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  const cat={}; for(const c of DATA.meta.categories)cat[c]=0;
+  for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
+    for(const i of o.items){ if(cat[i.category]!==undefined)cat[i.category]+=i.qty*(i.price-i.cost);}}
+  const cs=Object.keys(cat);
+  mk('profitCatChart',{type:'bar',data:{labels:cs,datasets:[{data:cs.map(c=>cat[c]),backgroundColor:'#10b981',borderRadius:6}]},
+    options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:fmtK}}}}});
+}
+
+function renderAds(curSet,curD,ad,adp,idx){
+  $('#adsKpi').innerHTML=
+    kpiCard('ค่าโฆษณารวม',fmt(ad.spend)+' ฿',delta(ad.spend,adp.spend))+
+    kpiCard('ยอดขายจากโฆษณา',fmt(ad.rev)+' ฿',delta(ad.rev,adp.rev))+
+    kpiCard('ROAS',ad.roas.toFixed(2)+'x',delta(ad.roas,adp.roas))+
+    kpiCard('CTR',ad.ctr.toFixed(2)+'%',delta(ad.ctr,adp.ctr))+
+    kpiCard('Conversion',ad.cvr.toFixed(2)+'%',delta(ad.cvr,adp.cvr))+
+    kpiCard('CPC',fmt2(ad.cpc)+' ฿',delta(adp.cpc,ad.cpc));
+  const spend=curD.map(()=>0), rev=curD.map(()=>0);
+  for(const a of DATA.ads){ if(!state.platforms.has(a.platform)||idx[a.date]===undefined)continue;
+    spend[idx[a.date]]+=a.spend; rev[idx[a.date]]+=a.revenue;}
+  mk('adTrendChart',{type:'bar',data:{labels:curD.map(d=>d.slice(5)),datasets:[
+    {label:'ค่าโฆษณา',data:spend,backgroundColor:'#ef4444aa',borderRadius:4},
+    {type:'line',label:'ยอดขายจากโฆษณา',data:rev,borderColor:'#10b981',backgroundColor:'#10b98122',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{x:{ticks:{maxTicksLimit:12}},y:{ticks:{callback:fmtK}}}}});
+  const byP={}, byC={};
+  for(const a of DATA.ads){ if(!state.platforms.has(a.platform)||!curSet.has(a.date))continue;
+    (byP[a.platform]||(byP[a.platform]={s:0,r:0})); byP[a.platform].s+=a.spend; byP[a.platform].r+=a.revenue;
+    const c=byC[a.campaign]||(byC[a.campaign]={plt:a.platform,s:0,r:0,cl:0,im:0,o:0});
+    c.s+=a.spend;c.r+=a.revenue;c.cl+=a.clicks;c.im+=a.impressions;c.o+=a.orders;}
+  const ps=Object.keys(byP);
+  mk('roasChart',{type:'bar',data:{labels:ps.map(p=>PLT[p].name),
+    datasets:[{data:ps.map(p=>byP[p].s?byP[p].r/byP[p].s:0),
+      backgroundColor:ps.map(p=>byP[p].s&&byP[p].r/byP[p].s>=3?'#10b981':'#f59e0b'),borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>v+'x'}}}}});
+  const camps=Object.entries(byC).sort((a,b)=>b[1].r-a[1].r);
+  $('#adTable').innerHTML=`<thead><tr><th>แคมเปญ</th><th>ช่องทาง</th>
+    <th class="num">ค่าโฆษณา</th><th class="num">ยอดขาย</th><th class="num">ROAS</th>
+    <th class="num">CTR</th><th class="num">Conv.</th></tr></thead><tbody>`+
+    camps.map(([n,c])=>{const roas=c.s?c.r/c.s:0;return `<tr>
+      <td>${n}</td><td><span class="tag t-${c.plt}">${PLT[c.plt].name}</span></td>
+      <td class="num">${fmt(c.s)}</td><td class="num">${fmt(c.r)}</td>
+      <td class="num ${roas>=3?'pos':'neg'}">${roas.toFixed(2)}x</td>
+      <td class="num">${c.im?(c.cl/c.im*100).toFixed(2):0}%</td>
+      <td class="num">${c.cl?(c.o/c.cl*100).toFixed(2):0}%</td></tr>`;}).join('')+'</tbody>';
+}
+
+function renderInventory(){
+  const prods=DATA.products.map(p=>({...p,total:p.stock.tiktok+p.stock.shopee+p.stock.lazada}));
+  const out=prods.filter(p=>p.total===0).length;
+  const low=prods.filter(p=>p.total<30).sort((a,b)=>a.total-b.total);
+  $('#invKpi').innerHTML=
+    kpiCard('จำนวน SKU',fmt(prods.length))+
+    kpiCard('หมดสต็อก',fmt(out)+' SKU')+
+    kpiCard('ใกล้หมด (<30)',fmt(low.length)+' SKU')+
+    kpiCard('มูลค่าสต็อก (ตามต้นทุน)',fmt(prods.reduce((s,p)=>s+p.total*p.cost,0))+' ฿');
+  $('#lowTable').innerHTML=`<thead><tr><th>SKU</th><th>สินค้า</th><th>หมวด</th>
+    <th class="num">รวม</th><th class="num">TikTok</th><th class="num">Shopee</th><th class="num">Lazada</th><th>สถานะ</th></tr></thead><tbody>`+
+    (low.length?low.map(p=>`<tr><td class="muted">${p.sku}</td><td>${p.name}</td>
+      <td><span class="tag t-cat">${p.category}</span></td>
+      <td class="num">${p.total}</td><td class="num">${p.stock.tiktok}</td>
+      <td class="num">${p.stock.shopee}</td><td class="num">${p.stock.lazada}</td>
+      <td>${p.total===0?'<span class="pill-red">หมดสต็อก</span>':'<span class="pill-amber">ใกล้หมด</span>'}</td></tr>`).join('')
+      :'<tr><td colspan="8" class="muted">ไม่มีสินค้าใกล้หมด ✅</td></tr>')+'</tbody>';
+}
+
+// ---------- events ----------
+$('#winSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  $('#winSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); state.win=+b.dataset.win; render();};
+$('#pltChips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
+  const p=c.dataset.plt;
+  if(state.platforms.has(p)&&state.platforms.size>1){state.platforms.delete(p);c.classList.remove('on');}
+  else{state.platforms.add(p);c.classList.add('on');}
+  render();};
+$('#catSel').onchange=e=>{state.category=e.target.value;render();};
+$('#prodSearch').oninput=drawProducts;
+$('#nav').onclick=e=>{const a=e.target.closest('a');if(!a)return;
+  $('#nav').querySelectorAll('a').forEach(x=>x.classList.remove('active'));a.classList.add('active');
+  document.getElementById('sec-'+a.dataset.sec).scrollIntoView({behavior:'smooth',block:'start'});
+  $('#sidebar').classList.remove('open');};
+$('#menuToggle').onclick=()=>$('#sidebar').classList.toggle('open');
+
+function setTheme(t){document.documentElement.dataset.theme=t;
+  $('#themeIc').textContent=t==='dark'?'☀️':'🌙'; $('#themeTxt').textContent=t==='dark'?'โหมดสว่าง':'โหมดมืด';
+  try{localStorage.setItem('theme',t);}catch(e){} if(DATA)render();}
+$('#themeBtn').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+try{const t=localStorage.getItem('theme');if(t)setTheme(t);}catch(e){}
+
+function afterLoad(){
+  $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
+    DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
+  render();
+}
+// ---------- login + ดึงข้อมูลสดจาก /api/data ----------
+function showLogin(){$('#loginOverlay').style.display='flex';$('#logoutBtn').style.display='flex';
+  setTimeout(()=>$('#loginPw').focus(),50);
+  try{const pw=sessionStorage.getItem('dpw');if(pw)submitLogin(pw,true);}catch(e){}}
+async function submitLogin(pw,silent){
+  const err=$('#loginErr'); const btn=$('#loginBtn');
+  err.textContent='กำลังดึงข้อมูลจาก Lazada…'; if(btn)btn.disabled=true;
+  try{
+    const r=await fetch('/api/data?pw='+encodeURIComponent(pw));
+    if(r.status===401) throw new Error('unauth');
+    if(!r.ok) throw new Error('err');
+    DATA=await r.json();
+    if(DATA.error) throw new Error(DATA.error);
+    try{sessionStorage.setItem('dpw',pw);}catch(e){}
+    $('#loginOverlay').style.display='none'; afterLoad();
+  }catch(e){
+    err.textContent = e.message==='unauth' ? 'รหัสผ่านไม่ถูกต้อง'
+                    : 'ดึงข้อมูลไม่สำเร็จ: '+e.message;
+    try{sessionStorage.removeItem('dpw');}catch(_){}
+  } finally { if(btn)btn.disabled=false; }
+}
+$('#loginBtn').onclick=()=>submitLogin($('#loginPw').value,false);
+$('#loginPw').addEventListener('keydown',e=>{if(e.key==='Enter')submitLogin($('#loginPw').value,false);});
+$('#logoutBtn').onclick=()=>{try{sessionStorage.removeItem('dpw');}catch(e){}location.reload();};
+
+function boot(){
+  if(window.DASHBOARD_DATA){ DATA=window.DASHBOARD_DATA;
+    const ov=$('#loginOverlay'); if(ov)ov.style.display='none'; afterLoad(); return; }
+  showLogin();
+}
+boot();
+</script>
+</body>
+</html>
