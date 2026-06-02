@@ -77,6 +77,17 @@
   .kpi .foot{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;min-height:18px}
   .kpi .spark{position:absolute;right:14px;bottom:12px;width:84px;height:26px;opacity:.45;pointer-events:none}
   .kpi .spark canvas{width:100%!important;height:100%!important}
+  .kpi.clickable{cursor:pointer;transition:.12s}
+  .kpi.clickable:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+  .kpi-more{position:absolute;top:14px;right:14px;color:var(--soft);font-size:18px;line-height:1}
+  .modal-overlay{position:fixed;inset:0;z-index:900;display:none;align-items:center;justify-content:center;background:rgba(8,10,18,.55);padding:20px}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;width:100%;max-width:440px;max-height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg)}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:15px}
+  .modal-head .x{cursor:pointer;color:var(--muted);font-size:15px;background:none;border:0}
+  .modal-body{overflow:auto;padding:6px 18px 14px}
+  .mrow{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .mrow:last-child{border-bottom:0}
+  .mrow .mval{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
   .delta{font-weight:600;padding:1px 6px;border-radius:6px;font-size:11px}
   .delta.up{color:var(--green);background:rgba(16,185,129,.12)}
   .delta.down{color:var(--red);background:rgba(239,68,68,.12)}
@@ -280,6 +291,13 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="kpiModal">
+  <div class="modal">
+    <div class="modal-head"><span id="kpiModalTitle"></span><button class="x" id="kpiModalClose">✕</button></div>
+    <div class="modal-body" id="kpiModalBody"></div>
+  </div>
+</div>
+
 <script>
 const PLT={tiktok:{name:'TikTok',c:'#ff2d55'},shopee:{name:'Shopee',c:'#ee4d2d'},lazada:{name:'Lazada',c:'#5b6cff'}};
 const DOW=['จ','อ','พ','พฤ','ศ','ส','อา']; // Monday-first
@@ -370,10 +388,44 @@ function renderRankList(id, entries, color){
     </div>`).join('') || '<div class="muted" style="padding:24px;text-align:center">ไม่มีข้อมูล</div>';
 }
 
-function kpiCard(label,value,d,sparkId){
+function kpiCard(label,value,d,sparkId,key){
   const dd=d?`<span class="delta ${d.cls}">${d.txt}</span><span class="vs">vs ช่วงก่อน</span>`:'';
   const sp=sparkId?`<div class="spark"><canvas id="${sparkId}"></canvas></div>`:'';
-  return `<div class="card kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="foot">${dd}</div>${sp}</div>`;
+  const ka=key?` data-kpi="${key}"`:'';
+  const hint=key?'<span class="kpi-more">›</span>':'';
+  return `<div class="card kpi${key?' clickable':''}"${ka}><div class="label">${label}</div><div class="value">${value}</div><div class="foot">${dd}</div>${sp}${hint}</div>`;
+}
+function openKpiDetail(key){
+  const {curD}=getWindows(); const set=new Set(curD); const orders=ordersIn(set);
+  const valid=orders.filter(o=>o.status!=='cancelled'&&o.status!=='returned');
+  let title='', rows=[];
+  if(key==='revenue'){
+    title='ยอดขาย — วันที่ขายดี (Top 10)';
+    const m={}; for(const o of valid)m[o.date]=(m[o.date]||0)+orderMatch(o).rev;
+    rows=Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([d,v])=>[d, fmt(v)+' ฿']);
+  } else if(key==='orders'){
+    title='ออเดอร์ — แยกตามสถานะ';
+    const st={}; for(const o of orders){const m=orderMatch(o); if(m.rev<=0&&o.status!=='cancelled'&&o.status!=='returned')continue; st[o.status]=(st[o.status]||0)+1;}
+    rows=Object.entries(st).sort((a,b)=>b[1]-a[1]).map(([s,n])=>[s, fmt(n)+' ออเดอร์']);
+  } else if(key==='aov'){
+    title='AOV — เฉลี่ยตามวันในสัปดาห์';
+    const DN=['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์'], su=Array(7).fill(0), cn=Array(7).fill(0);
+    for(const o of valid){const w=(new Date(o.date+'T00:00:00').getDay()+6)%7; su[w]+=orderMatch(o).rev; cn[w]++;}
+    rows=DN.map((n,i)=>[n, cn[i]?fmt(su[i]/cn[i])+' ฿':'—']);
+  } else if(key==='units'){
+    title='จำนวนชิ้น — สินค้าขายดี (Top 10)';
+    const u={}; for(const o of valid)for(const i of o.items){if(!matchCat(i))continue; const k=i.name||i.sku; u[k]=(u[k]||0)+i.qty;}
+    rows=Object.entries(u).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,q])=>[n, fmt(q)+' ชิ้น']);
+  } else if(key==='cancel'){
+    title='ออเดอร์ยกเลิก / คืนสินค้า';
+    rows=orders.filter(o=>o.status==='cancelled'||o.status==='returned')
+      .sort((a,b)=>b.date.localeCompare(a.date))
+      .map(o=>[o.date+' · '+(o.status==='cancelled'?'ยกเลิก':'คืนสินค้า'), fmt(o.items.reduce((s,i)=>s+i.qty*i.price,0))+' ฿']).slice(0,40);
+    if(!rows.length) rows=[['ไม่มีออเดอร์ยกเลิก/คืนในช่วงนี้ ✅','']];
+  }
+  $('#kpiModalTitle').textContent=title;
+  $('#kpiModalBody').innerHTML=rows.map(([a,b])=>`<div class="mrow"><span>${a}</span><span class="mval">${b}</span></div>`).join('');
+  $('#kpiModal').style.display='flex';
 }
 function spark(id,arr,color){
   if(!document.getElementById(id))return;
@@ -413,11 +465,11 @@ function render(){
   // โชว์เฉพาะ KPI ที่มีข้อมูลจริง (กำไร/margin เมื่อมีต้นทุน, ROAS เมื่อมีโฆษณา)
   const hasCost=s.cogs>0, hasAds=ad.spend>0;
   let cards =
-    kpiCard('ยอดขายรวม',fmt(s.rev)+' ฿',delta(s.rev,sp.rev),'spkRev')+
-    kpiCard('ออเดอร์',fmt(s.orders),delta(s.orders,sp.orders),'spkOrd')+
-    kpiCard('AOV (เฉลี่ย/ออเดอร์)',fmt(s.aov)+' ฿',delta(s.aov,sp.aov))+
-    kpiCard('จำนวนชิ้นที่ขาย',fmt(s.units),delta(s.units,sp.units))+
-    kpiCard('อัตรายกเลิก/คืน',s.cancelRate.toFixed(1)+'%',delta(sp.cancelRate,s.cancelRate));
+    kpiCard('ยอดขายรวม',fmt(s.rev)+' ฿',delta(s.rev,sp.rev),'spkRev','revenue')+
+    kpiCard('ออเดอร์',fmt(s.orders),delta(s.orders,sp.orders),'spkOrd','orders')+
+    kpiCard('AOV (เฉลี่ย/ออเดอร์)',fmt(s.aov)+' ฿',delta(s.aov,sp.aov),null,'aov')+
+    kpiCard('จำนวนชิ้นที่ขาย',fmt(s.units),delta(s.units,sp.units),null,'units')+
+    kpiCard('อัตรายกเลิก/คืน',s.cancelRate.toFixed(1)+'%',delta(sp.cancelRate,s.cancelRate),null,'cancel');
   if(hasCost) cards += kpiCard('กำไรสุทธิ',fmt(net)+' ฿',delta(net,netp),'spkNet')+
                        kpiCard('อัตรากำไรสุทธิ',margin.toFixed(1)+'%',delta(margin,marginp));
   if(hasAds)  cards += kpiCard('ROAS โฆษณา',ad.roas.toFixed(2)+'x',delta(ad.roas,adp.roas));
@@ -645,6 +697,9 @@ function exportCSV(){
   a.download=`seller-data-${curD[0]}_${curD[curD.length-1]}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 $('#exportBtn').onclick=exportCSV;
+$('#kpiGrid').onclick=e=>{const c=e.target.closest('[data-kpi]'); if(c)openKpiDetail(c.dataset.kpi);};
+$('#kpiModalClose').onclick=()=>$('#kpiModal').style.display='none';
+$('#kpiModal').onclick=e=>{if(e.target.id==='kpiModal')$('#kpiModal').style.display='none';};
 $('#pltChips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
   const p=c.dataset.plt;
   if(state.platforms.has(p)&&state.platforms.size>1){state.platforms.delete(p);c.classList.remove('on');}
