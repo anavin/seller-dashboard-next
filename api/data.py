@@ -294,14 +294,14 @@ def review_sample():
             break
         offset += 50
     now = datetime.datetime.now().astimezone()
-    ms_b = int(now.timestamp() * 1000)
-    ms_a = int((now - datetime.timedelta(days=30)).timestamp() * 1000)
+    sec_b = int(now.timestamp())
+    sec_a = int((now - datetime.timedelta(days=29)).timestamp())  # วินาที + ช่วง <30 วัน
     checked, last_err = 0, None
-    for iid in item_ids[:80]:
+    for iid in item_ids[:120]:
         checked += 1
         try:
             d = _call(LAZADA_BASE, "/review/seller/history/list", app_key, app_secret, access,
-                      {"item_id": iid, "start_time": ms_a, "end_time": ms_b, "current": 1, "page_size": 20})
+                      {"item_id": iid, "start_time": sec_a, "end_time": sec_b, "current": 1, "page_size": 20})
         except Exception as e:
             last_err = str(e)
             continue
