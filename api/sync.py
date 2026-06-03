@@ -239,24 +239,33 @@ def _finance_pull(access, app_key, app_secret, created_after, created_before):
     return rows
 
 
+def _is_timeout(msg):
+    return ("ServiceTimeout" in msg) or ("timeout" in msg.lower()) or ("RPC" in msg)
+
+
 def sync_finance(access, app_key, app_secret, created_after, created_before, depth=0):
-    """ดึงใบสรุปยอดโอน — ถ้า Lazada RPC timeout ให้หดช่วงครึ่งหนึ่งแล้วลองใหม่ จนเหลือ 1 วัน"""
-    try:
-        rows = _finance_pull(access, app_key, app_secret, created_after, created_before)
-    except Exception as e:
-        msg = str(e)
-        if depth < 7 and ("ServiceTimeout" in msg or "timeout" in msg.lower() or "RPC" in msg):
-            a = datetime.date.fromisoformat(created_after)
-            b = datetime.date.fromisoformat(created_before)
-            if (b - a).days >= 1:
-                mid = a + datetime.timedelta(days=(b - a).days // 2)
-                return (sync_finance(access, app_key, app_secret, created_after, mid.isoformat(), depth + 1)
-                        + sync_finance(access, app_key, app_secret,
-                                       (mid + datetime.timedelta(days=1)).isoformat(), created_before, depth + 1))
-        raise
-    if rows:
-        sb_upsert("lz_finance", rows, "statement_number")
-    return len(rows)
+    """ดึงใบสรุปยอดโอน — RPC timeout มักชั่วคราว: ลองซ้ำ 3 ครั้งก่อน แล้วค่อยหดช่วงครึ่งหนึ่ง"""
+    last_err = None
+    for attempt in range(2):
+        try:
+            rows = _finance_pull(access, app_key, app_secret, created_after, created_before)
+            if rows:
+                sb_upsert("lz_finance", rows, "statement_number")
+            return len(rows)
+        except Exception as e:
+            last_err = e
+            if not _is_timeout(str(e)):
+                raise
+            time.sleep(1.0)  # ชั่วคราว — รอแล้วลองช่วงเดิมซ้ำ
+    # ลองซ้ำแล้วยังไม่ผ่าน → หดช่วงครึ่งหนึ่ง
+    a = datetime.date.fromisoformat(created_after)
+    b = datetime.date.fromisoformat(created_before)
+    if depth < 7 and (b - a).days >= 1:
+        mid = a + datetime.timedelta(days=(b - a).days // 2)
+        return (sync_finance(access, app_key, app_secret, created_after, mid.isoformat(), depth + 1)
+                + sync_finance(access, app_key, app_secret,
+                               (mid + datetime.timedelta(days=1)).isoformat(), created_before, depth + 1))
+    raise last_err
 
 
 def run_finance_sync(since="2023-01-01"):
@@ -269,7 +278,7 @@ def run_finance_sync(since="2023-01-01"):
     access, new_rt = _refresh(app_key, app_secret, rt)
     start = datetime.date.fromisoformat(since)
     end = now.date()
-    budget, filled, skipped, more, total = 3, [], 0, False, 0
+    budget, filled, skipped, more, total = 2, [], 0, False, 0
     for ws, we in _month_windows(start, end):
         if budget <= 0:
             more = True
