@@ -242,16 +242,36 @@ def sync_finance(access, app_key, app_secret, created_after, created_before):
 
 
 def run_finance_sync(since="2023-01-01"):
-    """ดึงข้อมูลการเงินทั้งหมดตั้งแต่ since ถึงปัจจุบัน — สั่งด้วย /api/sync?finance=1"""
+    """ดึงข้อมูลการเงินทีละเดือน (กัน Lazada RPC timeout) ข้ามเดือนที่มีแล้ว — เรียกซ้ำจนกว่า more=false"""
     app_key = os.environ["LZ_APP_KEY"]
     app_secret = os.environ["LZ_APP_SECRET"]
     now = datetime.datetime.now().astimezone()
     state = sb_get("lz_sync", "id=eq.1&select=refresh_token")
     rt = (state[0].get("refresh_token") if state else None) or os.environ["LZ_REFRESH_TOKEN"]
     access, new_rt = _refresh(app_key, app_secret, rt)
-    n = sync_finance(access, app_key, app_secret, since, now.date().isoformat())
+    start = datetime.date.fromisoformat(since)
+    end = now.date()
+    budget, filled, skipped, more, total = 6, [], 0, False, 0
+    for ws, we in _month_windows(start, end):
+        if budget <= 0:
+            more = True
+            break
+        try:
+            cnt = sb_count("lz_finance", "select=statement_number&date=gte.%s&date=lte.%s"
+                           % (ws.isoformat(), we.isoformat()))
+        except Exception:
+            cnt = 0
+        if cnt > 0:
+            skipped += 1
+            continue
+        n = sync_finance(access, app_key, app_secret, ws.isoformat(), we.isoformat())
+        filled.append({"month": ws.strftime("%Y-%m"), "statements": n})
+        total += n
+        budget -= 1
     sb_upsert("lz_sync", [{"id": 1, "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
-    return {"ok": True, "mode": "finance", "statements": n, "since": since}
+    return {"ok": True, "mode": "finance", "statements_added": total, "filled": filled,
+            "skipped_existing": skipped, "more": more,
+            "hint": "more=true → เรียก URL เดิมซ้ำอีกครั้งจนกว่าจะ false"}
 
 
 # ---------- sync ----------
