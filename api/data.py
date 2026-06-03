@@ -299,15 +299,49 @@ def build_data(debug=False):
     return result
 
 
+def db_stats():
+    """เช็คช่วงข้อมูลใน DB แบบเบา ๆ (ไม่ดึงทุกแถว) — ใช้กับ /api/data?stats=1"""
+    h = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"}
+
+    def _count(table):
+        r = requests.get(f"{SB_URL}/rest/v1/{table}?select=*&limit=1",
+                         headers={**h, "Prefer": "count=exact", "Range": "0-0"}, timeout=20)
+        cr = r.headers.get("content-range", "*/0")
+        return int(cr.split("/")[-1]) if "/" in cr else 0
+
+    def _one(query):
+        r = requests.get(f"{SB_URL}/rest/v1/lz_orders?{query}", headers=h, timeout=20)
+        rows = r.json()
+        return rows[0].get("date") if rows else None
+
+    first = _one("select=date&order=date.asc&limit=1")
+    last = _one("select=date&order=date.desc&limit=1")
+    span = None
+    if first and last:
+        span = (datetime.date.fromisoformat(last) - datetime.date.fromisoformat(first)).days + 1
+    return {
+        "orders": _count("lz_orders"),
+        "order_items": _count("lz_order_items"),
+        "products": _count("lz_products"),
+        "first_order_date": first,
+        "last_order_date": last,
+        "span_days": span,
+    }
+
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         pw = qs.get("pw", [""])[0]
         debug = qs.get("debug", ["0"])[0] in ("1", "true", "yes")
+        stats = qs.get("stats", ["0"])[0] in ("1", "true", "yes")
         if pw != os.environ.get("DASH_PASSWORD", ""):
             self._send(401, {"error": "unauthorized"})
             return
         try:
+            if stats and SB_URL and SB_KEY:
+                self._send(200, db_stats())
+                return
             if SB_URL and SB_KEY and not debug:
                 data = build_from_db()          # มี Supabase -> อ่านจาก DB (เร็ว)
             else:
