@@ -189,6 +189,56 @@ def order_sample():
             "หมายเหตุ": "ดูว่ามี postcode/phone/address1 ที่พอใช้ทำลายนิ้วมือผู้ซื้อได้ไหม"}
 
 
+def api_probe():
+    """ยิงทดสอบหลาย endpoint (รีวิว/คืนสินค้า/ไทม์ไลน์จัดส่ง ฯลฯ) ดูว่าอันไหนเปิดสิทธิ์ + มีข้อมูล"""
+    app_key = os.environ["LZ_APP_KEY"]
+    app_secret = os.environ["LZ_APP_SECRET"]
+    rt = None
+    try:
+        sy = _sb_all("lz_sync", "refresh_token")
+        rt = sy[0].get("refresh_token") if sy else None
+    except Exception:
+        rt = None
+    rt = rt or os.environ.get("LZ_REFRESH_TOKEN", "")
+    access = _refresh(app_key, app_secret, rt)
+    now = datetime.datetime.now().astimezone()
+    since = (now - datetime.timedelta(days=30)).replace(microsecond=0).isoformat()
+    oid = None
+    try:
+        d = _call(LAZADA_BASE, "/orders/get", app_key, app_secret, access,
+                  {"created_after": since, "limit": 1, "sort_direction": "DESC"})
+        orders = (d.get("data") or {}).get("orders") or []
+        if orders:
+            oid = str(orders[0].get("order_id"))
+    except Exception:
+        oid = None
+    cands = [
+        ("รีวิว: seller list v2", "/review/seller/list/v2", {"limit": 3, "offset": 0}),
+        ("รีวิว: seller history", "/review/seller/history/list", {"limit": 3, "offset": 0}),
+        ("คืนสินค้า: reverse order list", "/reverse/order/list", {"limit": 3, "offset": 0}),
+        ("คืนสินค้า: reason list", "/reverse/reason/list", {}),
+        ("จัดส่ง: logistics trace", "/logistic/order/trace", ({"order_id": oid} if oid else {})),
+        ("ออเดอร์รายตัว (รายละเอียดเต็ม)", "/order/get", ({"order_id": oid} if oid else {})),
+        ("สต็อกขายได้จริง", "/product/stock/sellable/get", {"limit": 3, "offset": 0}),
+    ]
+    out = []
+    for label, path, params in cands:
+        try:
+            d = _call(LAZADA_BASE, path, app_key, app_secret, access, params)
+            data = d.get("data")
+            sample = data
+            if isinstance(data, list):
+                sample = data[:1]
+            elif isinstance(data, dict):
+                sample = {k: (v[:1] if isinstance(v, list) else v) for k, v in list(data.items())[:8]}
+            out.append({"api": label, "path": path, "ok": True, "code": str(d.get("code", "0")),
+                        "message": d.get("message", ""), "has_data": bool(data), "sample": sample})
+        except Exception as e:
+            out.append({"api": label, "path": path, "ok": False, "result": str(e)})
+    return {"order_id_used": oid, "probes": out,
+            "หมายเหตุ": "ok+has_data = ใช้ได้ · InvalidApiPath = path ผิด (ลอง path อื่น) · permission/whitelist = ต้องเปิดสิทธิ์"}
+
+
 def _refresh(app_key, app_secret, refresh_token):
     d = _call(AUTH_BASE, "/auth/token/refresh", app_key, app_secret, None,
               {"refresh_token": refresh_token})
@@ -521,6 +571,7 @@ class handler(BaseHTTPRequestHandler):
         summary = qs.get("summary", [""])[0]
         fincheck = qs.get("fincheck", ["0"])[0] in ("1", "true", "yes")
         ordersample = qs.get("ordersample", ["0"])[0] in ("1", "true", "yes")
+        apiprobe = qs.get("apiprobe", ["0"])[0] in ("1", "true", "yes")
         if pw != os.environ.get("DASH_PASSWORD", ""):
             self._send(401, {"error": "unauthorized"})
             return
@@ -530,6 +581,9 @@ class handler(BaseHTTPRequestHandler):
                 return
             if ordersample:
                 self._send(200, order_sample())
+                return
+            if apiprobe:
+                self._send(200, api_probe())
                 return
             if summary == "week" and SB_URL and SB_KEY:
                 self._send(200, summary_week())
