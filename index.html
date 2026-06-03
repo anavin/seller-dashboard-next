@@ -229,12 +229,12 @@
     <a data-sec="products"><span class="ic">📦</span> สินค้า</a>
     <a data-sec="profit"><span class="ic">💰</span> กำไร</a>
     <a data-sec="ads"><span class="ic">🎯</span> โฆษณา</a>
-    <a data-sec="inventory"><span class="ic">🏷️</span> สต็อก</a>
     <a data-sec="customers"><span class="ic">👥</span> ลูกค้า</a>
     <a data-sec="reviews"><span class="ic">⭐</span> รีวิว</a>
     <a data-sec="finance"><span class="ic">💵</span> การเงิน</a>
     <a data-sec="insight"><span class="ic">🔍</span> วิเคราะห์เชิงลึก</a>
     <a data-sec="advanced"><span class="ic">📊</span> วิเคราะห์ขั้นสูง</a>
+    <a data-sec="inventory"><span class="ic">🏷️</span> สต็อก</a>
   </nav>
   <div class="side-foot">
     <button class="theme-btn" id="themeBtn"><span id="themeIc">🌙</span> <span id="themeTxt">โหมดมืด</span></button>
@@ -367,20 +367,6 @@
     </section>
 
     <!-- INVENTORY -->
-    <section class="section" id="sec-inventory">
-      <h2><span class="bar"></span>สต็อกสินค้า</h2>
-      <div class="grid kpis" id="invKpi"></div>
-      <div class="card" style="margin-top:14px">
-        <div class="ctitle">📦 สต็อกอัจฉริยะ — จัดลำดับเติมด่วน</div>
-        <div class="csub">"เหลือกี่วัน" = สต็อก ÷ ความเร็วขาย (ชิ้น/วัน) · เรียงใกล้หมดสุดก่อน</div>
-        <div class="tbl-scroll" style="margin-top:10px"><table id="smartStockTable"></table></div>
-      </div>
-      <div class="card" style="margin-top:14px">
-        <div class="ctitle">⚠️ สินค้าใกล้หมด / หมดสต็อก (รวมทุกแพลตฟอร์ม &lt; 30 ชิ้น)</div>
-        <div class="tbl-scroll" style="margin-top:10px"><table id="lowTable"></table></div>
-      </div>
-    </section>
-
     <!-- CUSTOMERS / ลูกค้า — ใหม่ vs ซ้ำ (จากลายนิ้วมือที่อยู่) -->
     <section class="section" id="sec-customers">
       <h2><span class="bar"></span>ลูกค้า — ใหม่ vs ซื้อซ้ำ <span class="hint">ประเมินจากที่อยู่จัดส่ง (โดยประมาณ) · ใช้ข้อมูลทั้งหมด</span></h2>
@@ -446,6 +432,21 @@
         <div class="card c-4"><div class="ctitle">ราคาเฉลี่ย/ชิ้น ตามขนาด (ml)</div><div class="csub">ขนาดไหนมูลค่าต่อชิ้นสูง</div><div class="chart-wrap sm"><canvas id="mlPriceChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">ขนาด (ml) นิยมในแต่ละหมวด</div><div class="csub">จำนวนชิ้นแยกขนาด × หมวด (ซ้อน)</div><div class="chart-wrap sm"><canvas id="mlCatChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">กรุงเทพฯ vs ต่างจังหวัด</div><div class="csub">สัดส่วนรายได้</div><div class="chart-wrap sm"><canvas id="bkkChart"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- INVENTORY / สต็อก — ย้ายมาล่างสุด -->
+    <section class="section" id="sec-inventory">
+      <h2><span class="bar"></span>สต็อกสินค้า</h2>
+      <div class="grid kpis" id="invKpi"></div>
+      <div class="card" style="margin-top:14px">
+        <div class="ctitle">📦 สต็อกอัจฉริยะ — จัดลำดับเติมด่วน</div>
+        <div class="csub">"เหลือกี่วัน" = สต็อก ÷ ความเร็วขาย (ชิ้น/วัน) · เรียงใกล้หมดสุดก่อน</div>
+        <div class="tbl-scroll" style="margin-top:10px"><table id="smartStockTable"></table></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="ctitle">⚠️ สินค้าใกล้หมด / หมดสต็อก (รวมทุกแพลตฟอร์ม &lt; 30 ชิ้น)</div>
+        <div class="tbl-scroll" style="margin-top:10px"><table id="lowTable"></table></div>
       </div>
     </section>
 
