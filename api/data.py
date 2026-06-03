@@ -294,10 +294,10 @@ def review_sample():
             break
         offset += 50
     now = datetime.datetime.now().astimezone()
-    ms_a = int((now - datetime.timedelta(days=1700)).timestamp() * 1000)
     ms_b = int(now.timestamp() * 1000)
+    ms_a = int((now - datetime.timedelta(days=30)).timestamp() * 1000)
     checked, last_err = 0, None
-    for iid in item_ids[:40]:
+    for iid in item_ids[:80]:
         checked += 1
         try:
             d = _call(LAZADA_BASE, "/review/seller/history/list", app_key, app_secret, access,
