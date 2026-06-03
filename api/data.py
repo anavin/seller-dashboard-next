@@ -147,17 +147,22 @@ def finance_check():
         ("finance: transaction details", "/finance/transaction/details/get",
          {"start_time": start.isoformat(), "end_time": end.isoformat(), "limit": 1, "offset": 0}),
         ("finance: payout status", "/finance/payout/status/get",
-         {"start_time": start.isoformat(), "end_time": end.isoformat()}),
-        ("ads: campaign list", "/sponsor/solutions/campaign/list",
-         {"start_date": start.isoformat(), "end_date": end.isoformat()}),
+         {"created_after": start.isoformat(), "created_before": end.isoformat()}),
     ]
     out = []
     for label, path, params in probes:
         try:
             d = _call(LAZADA_BASE, path, app_key, app_secret, access, params)
+            data = d.get("data")
+            sample = data
+            if isinstance(data, list):
+                sample = data[:2]
+            elif isinstance(data, dict):
+                # ถ้าเป็น dict ที่มี list ข้างใน เอามาโชว์ 2 รายการแรก
+                sample = {k: (v[:2] if isinstance(v, list) else v) for k, v in data.items()}
             out.append({"api": label, "path": path, "ok": True,
                         "code": str(d.get("code", "0")), "message": d.get("message", ""),
-                        "has_data": bool(d.get("data"))})
+                        "has_data": bool(data), "sample": sample})
         except Exception as e:
             out.append({"api": label, "path": path, "ok": False, "result": str(e)})
     return {"token_ok": bool(access), "probes": out,
