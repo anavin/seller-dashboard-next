@@ -272,7 +272,7 @@
       <input type="text" id="dTo" class="dateinput" title="ถึงวันที่" placeholder="ถึงวันที่" readonly>
       <div id="calPop" class="cal-pop"></div>
       <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
-      <button id="backfillBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงออเดอร์ + การเงิน ย้อนหลังทั้งหมด (เลือกปีเริ่มได้)">🔄 ดึงทั้งหมด</button>
+      <button id="backfillBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงออเดอร์ (รวมลูกค้า+วิธีจ่าย) + การเงิน ย้อนหลังทั้งหมด">🔄 ดึงทั้งหมด</button>
       <button id="financeBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงเฉพาะข้อมูลการเงิน (ยอดโอน) ย้อนหลัง">💵 ดึงการเงิน</button>
     </div>
   </div>
@@ -1396,7 +1396,7 @@ async function backfillAll(){
   const pw=(()=>{try{return sessionStorage.getItem('dpw');}catch(e){return null;}})();
   if(!pw){alert('กรุณาเข้าสู่ระบบใหม่ก่อน');return;}
   const now=new Date();
-  const sy=parseInt(prompt('ดึงทั้งหมด (ออเดอร์ + การเงิน) ย้อนหลังตั้งแต่ปี ค.ศ. ไหน?\nเช่น 2021 — ถ้า Lazada ไม่มีปีนั้น ระบบจะข้ามให้เอง\nยิ่งเริ่มปีเก่ายิ่งใช้เวลานาน','2021')||'',10);
+  const sy=parseInt(prompt('ดึงทั้งหมดย้อนหลัง — ออเดอร์ (รวมข้อมูลลูกค้า + วิธีชำระเงิน) + การเงิน\nตั้งแต่ปี ค.ศ. ไหน? เช่น 2021\nหมายเหตุ: ดึงรอบนี้จะอัปเดตออเดอร์เก่าให้มีข้อมูลลูกค้า/วิธีจ่ายด้วย · ยิ่งเริ่มปีเก่ายิ่งนาน','2021')||'',10);
   if(!sy||sy<2015||sy>now.getFullYear())return;
   const btn=$('#backfillBtn'); btn.disabled=true;
   const pad=n=>String(n).padStart(2,'0');
