@@ -16,6 +16,7 @@ import hmac
 import hashlib
 import datetime
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -26,19 +27,66 @@ SB_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SB_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 
-def _sb_all(table, select="*", extra=""):
-    """อ่านทุกแถวจาก Supabase แบบแบ่งหน้า"""
-    out, offset = [], 0
+_SB_PAGE = 1000
+
+
+def _sb_page(table, select, extra, offset):
     h = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"}
+    url = f"{SB_URL}/rest/v1/{table}?select={select}&limit={_SB_PAGE}&offset={offset}{extra}"
+    r = requests.get(url, headers=h, timeout=25)
+    r.raise_for_status()
+    return r.json()
+
+
+def _sb_count(table, extra=""):
+    """นับจำนวนแถวแบบเบา (ไม่ดึงข้อมูล) เพื่อแบ่งหน้าไปดึงพร้อมกัน"""
+    h = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}",
+         "Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"}
+    url = f"{SB_URL}/rest/v1/{table}?select=*&limit=1{extra}"
+    r = requests.get(url, headers=h, timeout=25)
+    r.raise_for_status()
+    cr = r.headers.get("Content-Range", "")  # เช่น "0-0/12345"
+    if "/" in cr:
+        tail = cr.split("/")[-1]
+        if tail.isdigit():
+            return int(tail)
+    return -1
+
+
+def _sb_all(table, select="*", extra=""):
+    """อ่านทุกแถวจาก Supabase — ดึงทุกหน้าพร้อมกัน (parallel) ให้เร็วขึ้นมาก"""
+    total = -1
+    try:
+        total = _sb_count(table, extra)
+    except Exception:
+        total = -1
+
+    # รู้จำนวนแถว -> ยิงทุกหน้าพร้อมกัน
+    if total >= 0:
+        if total == 0:
+            return []
+        offsets = list(range(0, total, _SB_PAGE))
+        if len(offsets) <= 1:
+            return _sb_page(table, select, extra, 0)
+        results = [None] * len(offsets)
+        with ThreadPoolExecutor(max_workers=min(8, len(offsets))) as ex:
+            futs = {ex.submit(_sb_page, table, select, extra, off): i
+                    for i, off in enumerate(offsets)}
+            for fut in futs:
+                results[futs[fut]] = fut.result()
+        out = []
+        for chunk in results:
+            out += chunk
+        return out
+
+    # นับไม่ได้ -> วิธีเดิม (sequential)
+    out, offset = [], 0
     while True:
-        url = f"{SB_URL}/rest/v1/{table}?select={select}&limit=1000&offset={offset}{extra}"
-        r = requests.get(url, headers=h, timeout=25)
-        r.raise_for_status()
-        rows = r.json()
+        rows = _sb_page(table, select, extra, offset)
         out += rows
-        if len(rows) < 1000:
+        if len(rows) < _SB_PAGE:
             break
-        offset += 1000
+        offset += _SB_PAGE
     return out
 
 
@@ -66,9 +114,23 @@ def _pay_group(p):
 
 def build_from_db():
     """อ่านข้อมูลจาก Supabase แล้วประกอบเป็น JSON เดียวกับที่ dashboard ใช้ (เร็ว)"""
-    orders = _sb_all("lz_orders")
-    items = _sb_all("lz_order_items")
-    products = _sb_all("lz_products")
+    # ดึงทุกตารางพร้อมกัน (แต่ละตารางก็แบ่งหน้าดึงพร้อมกันอีกชั้น)
+    def _safe_all(table):
+        try:
+            return _sb_all(table)
+        except Exception:
+            return []
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        f_orders = ex.submit(_sb_all, "lz_orders")
+        f_items = ex.submit(_sb_all, "lz_order_items")
+        f_products = ex.submit(_sb_all, "lz_products")
+        f_finance = ex.submit(_safe_all, "lz_finance")
+        f_reviews = ex.submit(_safe_all, "lz_reviews")
+    orders = f_orders.result()
+    items = f_items.result()
+    products = f_products.result()
+    _finance_rows = f_finance.result()
+    _reviews_rows = f_reviews.result()
 
     by_order = {}
     for it in items:
@@ -111,7 +173,7 @@ def build_from_db():
     # การเงิน: ใบสรุปยอดโอน (ถ้ามี)
     finance = []
     try:
-        for r in _sb_all("lz_finance"):
+        for r in _finance_rows:
             finance.append({
                 "statement": r.get("statement_number", ""),
                 "date": str(r.get("date", ""))[:10],
@@ -124,7 +186,7 @@ def build_from_db():
         finance = []
     reviews = []
     try:
-        for r in _sb_all("lz_reviews"):
+        for r in _reviews_rows:
             reviews.append({
                 "item_id": r.get("item_id", ""), "sku": r.get("sku", ""),
                 "name": r.get("name", "") or r.get("sku", ""),

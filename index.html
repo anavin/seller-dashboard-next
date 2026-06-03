@@ -1689,13 +1689,16 @@ async function submitLogin(pw,silent){
   const err=$('#loginErr'); const btn=$('#loginBtn');
   err.textContent='กำลังดึงข้อมูลจาก Lazada…'; if(btn)btn.disabled=true;
   try{
+    const t0=performance.now();
     const r=await fetch('/api/data?pw='+encodeURIComponent(pw));
     if(r.status===401) throw new Error('unauth');
     if(!r.ok) throw new Error('err');
     DATA=await r.json();
+    const t1=performance.now();
     if(DATA.error) throw new Error(DATA.error);
     try{sessionStorage.setItem('dpw',pw);}catch(e){}
     $('#loginOverlay').style.display='none'; afterLoad();
+    console.log(`[perf] ดึง+แปลงข้อมูล ${Math.round(t1-t0)}ms · เรนเดอร์ ${Math.round(performance.now()-t1)}ms · ออเดอร์ ${(DATA.orders||[]).length} รายการ`);
   }catch(e){
     err.textContent = e.message==='unauth' ? 'รหัสผ่านไม่ถูกต้อง'
                     : 'ดึงข้อมูลไม่สำเร็จ: '+e.message;
