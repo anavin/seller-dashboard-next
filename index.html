@@ -854,6 +854,7 @@ function buildDateSet(){DATE_SET.clear();(DATA.orders||[]).forEach(o=>{if(o.date
 const calState={input:null,y:0,m:0};
 function calISO(y,m,d){return y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');}
 function openCal(input){
+  if(!DATE_SET.size)buildDateSet();   // กันกรณีโหลดมาแล้วยังไม่ได้สร้างเซ็ตวันที่
   calState.input=input;
   const v=input.value||input.dataset.max||DATA.meta.end_date||'';
   const base=v?new Date(v+'T00:00:00'):new Date();
@@ -889,8 +890,9 @@ $('#calPop').addEventListener('click',e=>{
   const day=e.target.closest('.cal-day[data-d]');
   if(day&&calState.input){calState.input.value=day.dataset.d;onDateChange();closeCal();}
 });
-$('#dFrom').onclick=()=>openCal($('#dFrom'));
-$('#dTo').onclick=()=>openCal($('#dTo'));
+$('#dFrom').onclick=e=>{e.stopPropagation();openCal($('#dFrom'));};
+$('#dTo').onclick=e=>{e.stopPropagation();openCal($('#dTo'));};
+$('#calPop').addEventListener('mousedown',e=>e.stopPropagation());
 document.addEventListener('click',e=>{
   if(calState.input&&!e.target.closest('#calPop')&&e.target!==calState.input)closeCal();
 });
