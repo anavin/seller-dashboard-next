@@ -651,7 +651,7 @@ function spark(id,arr,color){
 }
 
 // ---------- main ----------
-function render(){
+function render(sync){
   applyChartTheme();
   const end=DATA.meta.end_date;
   const {curD,prevD}=getWindows();
@@ -736,22 +736,27 @@ function render(){
     datasets:[{data:pr.map(p=>daily[p].reduce((a,b)=>a+b,0)),backgroundColor:pr.map(p=>PLT[p].c),borderWidth:0}]},
     options:{maintainAspectRatio:false,cutout:'64%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
 
-  renderSales(curSet,curD);
-  renderProducts(curSet);
-  renderProductExtras(curSet);
-  renderProfit(curSet,s,net,netp,ad);
-  renderAds(curSet,curD,ad,adp,idx);
-  renderInventory(curSet,curD.length);
-  renderTrends(curD);
-  renderHeatmap(curSet);
-  renderDist(curSet);
-  renderPayment(curSet);
-  renderVoucher(curSet);
-  renderInsight();
-  renderFinance();
-  renderAdvanced();
-  renderCustomers();
-  renderReviews();
+  renderTrends(curD);   // กราฟภาพรวม (รายเดือน + สะสม) — แสดงทันที
+  // ส่วนที่เหลือ (อีก ~40 กราฟ) วาดแบบหน่วงเวลา เพื่อให้ภาพรวมโชว์เร็ว login ไม่ค้าง
+  const heavy=()=>{ try{
+    renderSales(curSet,curD);
+    renderProducts(curSet);
+    renderProductExtras(curSet);
+    renderProfit(curSet,s,net,netp,ad);
+    renderAds(curSet,curD,ad,adp,idx);
+    renderInventory(curSet,curD.length);
+    renderHeatmap(curSet);
+    renderDist(curSet);
+    renderPayment(curSet);
+    renderVoucher(curSet);
+    renderInsight();
+    renderFinance();
+    renderAdvanced();
+    renderCustomers();
+    renderReviews();
+  }catch(e){const m=document.getElementById('metaLine');if(m)m.textContent='⚠️ '+e.message;} };
+  if(sync){ heavy(); }
+  else { clearTimeout(window._heavyT); window._heavyT=setTimeout(heavy, 20); }
 }
 // ---------- รีวิวสินค้า (ใช้ข้อมูลทั้งหมด) ----------
 function renderReviews(){
@@ -1580,7 +1585,7 @@ function addExpandButtons(){
 function openChart(id,title){
   if(!document.getElementById(id))return;
   $('#chartModalTitle').textContent=title;
-  EXPAND_ID=id; if(DATA)render();           // วาดใหม่ให้ตัวที่ขยายโชว์ Top 100 / ทั้งหมด
+  EXPAND_ID=id; if(DATA)render(true);           // วาดใหม่ทันที (sync) ให้ตัวที่ขยายโชว์ Top 100
   const el=document.getElementById(id); if(!el){EXPAND_ID=null;return;}
   chartReturn={el,parent:el.parentNode,next:el.nextSibling};
   const body=$('#chartModalBody'); body.innerHTML=''; body.appendChild(el);
@@ -1594,7 +1599,7 @@ function closeChart(){
     if(next&&next.parentNode===parent)parent.insertBefore(el,next); else parent.appendChild(el);
     chartReturn=null;}
   $('#chartModal').style.display='none';
-  EXPAND_ID=null; if(DATA)render();          // กลับมาแสดงตามปกติ
+  EXPAND_ID=null; if(DATA)render(true);          // กลับมาแสดงตามปกติ (sync)
 }
 $('#chartModalClose').onclick=closeChart;
 $('#chartModal').onclick=e=>{if(e.target.id==='chartModal')closeChart();};
