@@ -1153,7 +1153,7 @@ async function financeAll(){
       const r=await fetch(`/api/sync?pw=${encodeURIComponent(pw)}&finance=1`);
       const j=await r.json();
       if(j.error){btn.textContent='⚠️ '+j.error; btn.disabled=false; return;}
-      total+=j.statements_added||0; more=!!j.more;
+      total+=(j.txn_lines_added||j.statements_added||0); more=!!j.more;
     }catch(e){more=false;}
   }
   btn.textContent=`✓ การเงิน +${total.toLocaleString()} ใบ`;

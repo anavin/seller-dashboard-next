@@ -206,66 +206,75 @@ def _num(v):
     return float(m.group().replace(",", "")) if m else 0.0
 
 
-def _finance_pull(access, app_key, app_secret, created_after, created_before):
-    """ดึงใบโอนช่วง [after, before] (อาจ throw ServiceTimeout ถ้าช่วงกว้างไป)"""
-    rows, offset = [], 0
-    while True:
-        d = _lz("/finance/payout/status/get", app_key, app_secret, access,
-                {"created_after": created_after, "created_before": created_before,
-                 "limit": 50, "offset": offset})
-        batch = d.get("data") or []
-        if isinstance(batch, dict):
-            batch = batch.get("list") or batch.get("statements") or batch.get("rows") or []
-        if not batch:
-            break
-        for s in batch:
-            sn = s.get("statement_number")
-            if not sn:
-                continue
-            rows.append({
-                "statement_number": sn,
-                "date": (s.get("created_at") or "")[:10] or None,
-                "item_revenue": _num(s.get("item_revenue")),
-                "fees_total": _num(s.get("fees_total")),
-                "refunds": _num(s.get("refunds")),
-                "payout": _num(s.get("payout")),
-                "created_at_lz": s.get("created_at", ""),
-            })
-        if len(batch) < 50:
-            break
-        offset += 50
-        if offset >= 20000:
-            break
-    return rows
-
-
 def _is_timeout(msg):
     return ("ServiceTimeout" in msg) or ("timeout" in msg.lower()) or ("RPC" in msg)
 
 
-def sync_finance(access, app_key, app_secret, created_after, created_before, depth=0):
-    """ดึงใบสรุปยอดโอน — RPC timeout มักชั่วคราว: ลองซ้ำ 3 ครั้งก่อน แล้วค่อยหดช่วงครึ่งหนึ่ง"""
+def _txn_pull(access, app_key, app_secret, start_time, end_time):
+    """ดึง transaction details ช่วง [start, end] (อาจ throw ServiceTimeout ถ้าช่วงกว้าง)"""
+    rows, offset = [], 0
+    while True:
+        d = _lz("/finance/transaction/details/get", app_key, app_secret, access,
+                {"start_time": start_time, "end_time": end_time, "limit": 500, "offset": offset})
+        batch = d.get("data") or []
+        if isinstance(batch, dict):
+            batch = batch.get("list") or batch.get("rows") or []
+        if not batch:
+            break
+        rows += batch
+        if len(batch) < 500:
+            break
+        offset += 500
+        if offset >= 200000:
+            break
+    return rows
+
+
+def _txn_sums(access, app_key, app_secret, after, before, depth=0):
+    """รวมยอด transaction details ช่วง [after, before] -> {rev, fee, n} · timeout = ลองซ้ำ/หดช่วง"""
     last_err = None
     for attempt in range(2):
         try:
-            rows = _finance_pull(access, app_key, app_secret, created_after, created_before)
-            if rows:
-                sb_upsert("lz_finance", rows, "statement_number")
-            return len(rows)
+            rows = _txn_pull(access, app_key, app_secret, after, before)
+            rev = fee = 0.0
+            for r in rows:
+                amt = _num(r.get("amount"))
+                if amt >= 0:
+                    rev += amt
+                else:
+                    fee += amt
+            return {"rev": rev, "fee": fee, "n": len(rows)}
         except Exception as e:
             last_err = e
             if not _is_timeout(str(e)):
                 raise
-            time.sleep(1.0)  # ชั่วคราว — รอแล้วลองช่วงเดิมซ้ำ
-    # ลองซ้ำแล้วยังไม่ผ่าน → หดช่วงครึ่งหนึ่ง
-    a = datetime.date.fromisoformat(created_after)
-    b = datetime.date.fromisoformat(created_before)
+            time.sleep(1.0)
+    a = datetime.date.fromisoformat(after)
+    b = datetime.date.fromisoformat(before)
     if depth < 7 and (b - a).days >= 1:
         mid = a + datetime.timedelta(days=(b - a).days // 2)
-        return (sync_finance(access, app_key, app_secret, created_after, mid.isoformat(), depth + 1)
-                + sync_finance(access, app_key, app_secret,
-                               (mid + datetime.timedelta(days=1)).isoformat(), created_before, depth + 1))
+        l = _txn_sums(access, app_key, app_secret, after, mid.isoformat(), depth + 1)
+        r = _txn_sums(access, app_key, app_secret, (mid + datetime.timedelta(days=1)).isoformat(), before, depth + 1)
+        return {"rev": l["rev"] + r["rev"], "fee": l["fee"] + r["fee"], "n": l["n"] + r["n"]}
     raise last_err
+
+
+def finance_upsert_month(access, app_key, app_secret, y, m):
+    """ดึงค่าธรรมเนียมทั้งเดือน (y, m) แล้ว upsert เป็น 1 แถวต่อเดือนใน lz_finance"""
+    last = calendar.monthrange(y, m)[1]
+    ws = datetime.date(y, m, 1)
+    we = datetime.date(y, m, last)
+    s = _txn_sums(access, app_key, app_secret, ws.isoformat(), we.isoformat())
+    sb_upsert("lz_finance", [{
+        "statement_number": "M-%04d-%02d" % (y, m),
+        "date": ws.isoformat(),
+        "item_revenue": round(s["rev"], 2),
+        "fees_total": round(s["fee"], 2),
+        "refunds": 0,
+        "payout": round(s["rev"] + s["fee"], 2),
+        "created_at_lz": "",
+    }], "statement_number")
+    return s["n"]
 
 
 def run_finance_sync(since="2023-01-01"):
@@ -278,25 +287,25 @@ def run_finance_sync(since="2023-01-01"):
     access, new_rt = _refresh(app_key, app_secret, rt)
     start = datetime.date.fromisoformat(since)
     end = now.date()
-    budget, filled, skipped, more, total = 2, [], 0, False, 0
+    budget, filled, skipped, more, total = 3, [], 0, False, 0
     for ws, we in _month_windows(start, end):
         if budget <= 0:
             more = True
             break
+        mo = ws.strftime("%Y-%m")
         try:
-            cnt = sb_count("lz_finance", "select=statement_number&date=gte.%s&date=lte.%s"
-                           % (ws.isoformat(), we.isoformat()))
+            cnt = sb_count("lz_finance", "select=statement_number&statement_number=eq.M-%s" % mo)
         except Exception:
             cnt = 0
         if cnt > 0:
             skipped += 1
             continue
-        n = sync_finance(access, app_key, app_secret, ws.isoformat(), we.isoformat())
-        filled.append({"month": ws.strftime("%Y-%m"), "statements": n})
+        n = finance_upsert_month(access, app_key, app_secret, ws.year, ws.month)
+        filled.append({"month": mo, "lines": n})
         total += n
         budget -= 1
     sb_upsert("lz_sync", [{"id": 1, "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
-    return {"ok": True, "mode": "finance", "statements_added": total, "filled": filled,
+    return {"ok": True, "mode": "finance", "txn_lines_added": total, "filled": filled,
             "skipped_existing": skipped, "more": more,
             "hint": "more=true → เรียก URL เดิมซ้ำอีกครั้งจนกว่าจะ false"}
 
@@ -426,12 +435,15 @@ def run_sync(force_days=None, from_date=None, to_date=None, fill_all=False, sinc
     _write_orders(order_rows, item_rows)
     if prod_rows:
         sb_upsert("lz_products", list(prod_rows.values()), "sku")
-    # อัปเดตการเงิน (ใบโอนล่าสุด ~35 วัน) ให้สดทุกวัน
+    # อัปเดตการเงิน (เดือนนี้ + เดือนก่อน) ให้สดทุกวัน
+    fin = 0
     try:
-        fin = sync_finance(access, app_key, app_secret,
-                           (now - datetime.timedelta(days=35)).date().isoformat(), now.date().isoformat())
+        cur = now.date()
+        prev = (cur.replace(day=1) - datetime.timedelta(days=1))
+        fin += finance_upsert_month(access, app_key, app_secret, cur.year, cur.month)
+        fin += finance_upsert_month(access, app_key, app_secret, prev.year, prev.month)
     except Exception:
-        fin = 0
+        pass
     sb_upsert("lz_sync", [{"id": 1, "last_sync_time": now.isoformat(),
                            "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
     return {"ok": True, "synced_orders": len(order_rows), "items": len(item_rows),
