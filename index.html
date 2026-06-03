@@ -334,7 +334,8 @@ const state={win:30, platforms:new Set(['tiktok','shopee','lazada']), category:'
 window.onerror=function(msg,src,line){var m=document.getElementById('metaLine');if(m)m.textContent='⚠️ '+msg+' (บรรทัด '+line+')';return false;};
 
 function cssvar(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
-function addDays(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
+function addDays(iso,n){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function windowDates(end,win){const a=[];for(let i=win-1;i>=0;i--)a.push(addDays(end,-i));return a;}
 function datesBetween(a,b){const out=[];let d=a,g=0;while(d<=b&&g++<2000){out.push(d);d=addDays(d,1);}return out;}
 function getWindows(){
