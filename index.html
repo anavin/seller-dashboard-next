@@ -477,8 +477,9 @@ const CAT_PALETTE=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4','
 let CAT_COLORS={};
 function buildCatColors(){CAT_COLORS={};(DATA&&DATA.meta&&DATA.meta.categories||[]).forEach((c,i)=>{CAT_COLORS[c]=CAT_PALETTE[i%CAT_PALETTE.length];});}
 function catColor(c){return CAT_COLORS[c]||'#94a3b8';}
-// หมวดที่ไม่อยากแสดงในกราฟวิเคราะห์ (ข้อมูลน้อย/ไม่เกี่ยว)
+// หมวด/ขนาดที่ไม่อยากแสดงในกราฟ (ข้อมูลน้อย/เพี้ยน)
 const HIDE_CATS=new Set(['Air Fresheners','Beliefs & Religious Decoration']);
+const HIDE_ML=new Set(['1ml','2ml','5ml','90ml','100ml']);
 // 50 เขตของกรุงเทพฯ (ใช้แยก กทม. vs ต่างจังหวัด จากชื่อเขต)
 const BKK_KHET=new Set(['พระนคร','ดุสิต','หนองจอก','บางรัก','บางเขน','บางกะปิ','ปทุมวัน','ป้อมปราบศัตรูพ่าย','พระโขนง','มีนบุรี','ลาดกระบัง','ยานนาวา','สัมพันธวงศ์','พญาไท','ธนบุรี','บางกอกใหญ่','ห้วยขวาง','คลองสาน','ตลิ่งชัน','บางกอกน้อย','บางขุนเทียน','ภาษีเจริญ','หนองแขม','ราษฎร์บูรณะ','บางพลัด','ดินแดง','บึงกุ่ม','สาทร','บางซื่อ','จตุจักร','บางคอแหลม','ประเวศ','คลองเตย','สวนหลวง','จอมทอง','ดอนเมือง','ราชเทวี','ลาดพร้าว','วัฒนา','บางแค','หลักสี่','สายไหม','คันนายาว','สะพานสูง','วังทองหลาง','คลองสามวา','บางนา','ทวีวัฒนา','ทุ่งครุ','บางบอน']);
 // จัดรูปแบบป้ายแกนวันที่ให้อ่านง่าย: ช่วงสั้น=วัน/เดือน, ช่วงยาว=เดือน ปีพ.ศ.(2หลัก)
@@ -949,10 +950,10 @@ function renderAdvanced(){
   const mlU={},mlR={},mlCat={};
   for(const o of valid)for(const i of o.items){const z=mlOf(i);mlU[z]=(mlU[z]||0)+i.qty;mlR[z]=(mlR[z]||0)+i.qty*i.price;
     (mlCat[z]||(mlCat[z]={}))[i.category]=(mlCat[z][i.category]||0)+i.qty;}
-  const zk=Object.keys(mlU).sort((a,b)=>(parseInt(a)||9e9)-(parseInt(b)||9e9));
+  const zk=Object.keys(mlU).filter(z=>!HIDE_ML.has(z)).sort((a,b)=>(parseInt(a)||9e9)-(parseInt(b)||9e9));
   mk('mlPriceChart',{type:'bar',data:{labels:zk,datasets:[{data:zk.map(z=>mlU[z]?mlR[z]/mlU[z]:0),backgroundColor:accent,borderRadius:6}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
-  const cats=DATA.meta.categories;
+  const cats=DATA.meta.categories.filter(c=>!HIDE_CATS.has(c));
   mk('mlCatChart',{type:'bar',data:{labels:zk,datasets:cats.map(c=>({label:c,data:zk.map(z=>(mlCat[z]&&mlCat[z][c])||0),backgroundColor:catColor(c)}))},
     options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},scales:{x:{stacked:true},y:{stacked:true,ticks:{precision:0}}}}});
   // ===== 6) กทม vs ตจว =====
@@ -1312,7 +1313,7 @@ function renderProductExtras(curSet){
   const mlRev={}, mlUnit={};
   for(const o of valid)for(const i of o.items){ const z=mlOf(i);
     mlRev[z]=(mlRev[z]||0)+i.qty*i.price; mlUnit[z]=(mlUnit[z]||0)+i.qty; }
-  const zk=Object.keys(mlRev).sort((a,b)=>(parseInt(a)||9e9)-(parseInt(b)||9e9));
+  const zk=Object.keys(mlRev).filter(z=>!HIDE_ML.has(z)).sort((a,b)=>(parseInt(a)||9e9)-(parseInt(b)||9e9));
   const zcol=zk.map((_,i)=>palette[i%palette.length]);
   if(zk.length) mk('mlChart',{type:'doughnut',data:{labels:zk,datasets:[{data:zk.map(z=>mlRev[z]),backgroundColor:zcol,borderWidth:0}]},
     options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
