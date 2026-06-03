@@ -295,28 +295,48 @@ def review_sample():
         offset += 50
     now = datetime.datetime.now().astimezone()
     sec_b = int(now.timestamp())
-    sec_a = int((now - datetime.timedelta(days=29)).timestamp())  # วินาที + ช่วง <30 วัน
+
+    def _rlist(d):
+        data = d.get("data")
+        if isinstance(data, dict):
+            return data.get("review_list") or data.get("reviews") or data.get("list") or []
+        return data if isinstance(data, list) else []
+
+    # หาช่วงเวลาที่ Lazada ยอมรับ (start_time ย้อนหลังได้ไม่เกินเท่าไหร่)
+    valid_days, perr = None, None
+    for days in [25, 14, 7, 3, 1]:
+        sa = int((now - datetime.timedelta(days=days)).timestamp())
+        try:
+            _call(LAZADA_BASE, "/review/seller/history/list", app_key, app_secret, access,
+                  {"item_id": item_ids[0], "start_time": sa, "end_time": sec_b, "current": 1, "page_size": 20})
+            valid_days = days
+            break
+        except Exception as e:
+            perr = str(e)
+            if "STARTTIME" in perr or "TIMESPAN" in perr:
+                continue
+            valid_days = days  # error อื่น = ช่วงเวลาผ่าน แต่ติดอย่างอื่น
+            break
+    if valid_days is None:
+        return {"first_review_raw": None, "note": "ทุกช่วงเวลาติด param error", "last_error": perr}
+    sa = int((now - datetime.timedelta(days=valid_days)).timestamp())
     checked, last_err = 0, None
-    for iid in item_ids[:120]:
+    for iid in item_ids:
         checked += 1
+        if checked > 180:
+            break
         try:
             d = _call(LAZADA_BASE, "/review/seller/history/list", app_key, app_secret, access,
-                      {"item_id": iid, "start_time": sec_a, "end_time": sec_b, "current": 1, "page_size": 20})
+                      {"item_id": iid, "start_time": sa, "end_time": sec_b, "current": 1, "page_size": 20})
         except Exception as e:
             last_err = str(e)
             continue
-        data = d.get("data")
-        rlist = []
-        if isinstance(data, dict):
-            rlist = data.get("review_list") or data.get("reviews") or data.get("list") or []
-        elif isinstance(data, list):
-            rlist = data
-        if rlist:
-            return {"items_checked": checked, "endpoint": "history",
-                    "data_keys": sorted(data.keys()) if isinstance(data, dict) else "list",
-                    "first_review_raw": rlist[0], "review_keys": sorted(rlist[0].keys())}
-    return {"items_checked": checked, "total_items": len(item_ids), "first_review_raw": None,
-            "last_error": last_err, "note": "ยังไม่เจอรีวิวใน 40 item แรกผ่าน history — ดู last_error ว่าติด param ไหน"}
+        rl = _rlist(d)
+        if rl:
+            return {"window_days": valid_days, "items_checked": checked,
+                    "first_review_raw": rl[0], "review_keys": sorted(rl[0].keys())}
+    return {"window_days": valid_days, "items_checked": checked, "first_review_raw": None,
+            "last_error": last_err, "note": "ช่วงเวลาใช้ได้แต่ไม่เจอรีวิวใน %d สินค้า — รีวิวล่าสุดน้อยมาก" % checked}
 
 
 def _refresh(app_key, app_secret, refresh_token):
