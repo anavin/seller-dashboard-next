@@ -214,17 +214,27 @@ def api_probe():
             oid = str(orders[0].get("order_id"))
     except Exception:
         oid = None
-    st = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S %z")
-    et = now.strftime("%Y-%m-%d %H:%M:%S %z")
+    ms_a = int((now - datetime.timedelta(days=180)).timestamp() * 1000)
+    ms_b = int(now.timestamp() * 1000)
+    sec_a = int((now - datetime.timedelta(days=180)).timestamp())
+    sec_b = int(now.timestamp())
+    # หา item_id สำหรับ review list v2
+    item_id = None
+    try:
+        dp = _call(LAZADA_BASE, "/products/get", app_key, app_secret, access, {"limit": 1, "filter": "all"})
+        prods = (dp.get("data") or {}).get("products") or []
+        if prods:
+            item_id = prods[0].get("item_id")
+    except Exception:
+        item_id = None
     cands = [
-        ("รีวิว: history (มี start_time)", "/review/seller/history/list",
-         {"start_time": st, "end_time": et, "limit": 5, "offset": 0}),
-        ("รีวิว: history (วันที่สั้น)", "/review/seller/history/list",
-         {"start_time": (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d"),
-          "end_time": now.strftime("%Y-%m-%d"), "limit": 5, "offset": 0}),
-        ("คืนสินค้า: order reverse list", "/order/reverse/list", {"limit": 5, "offset": 0}),
-        ("คืนสินค้า: rc list", "/rc/order/reverse/list", {"limit": 5, "offset": 0}),
-        ("จัดส่ง: trace (order เก่า)", "/logistic/order/trace", ({"order_id": oid} if oid else {})),
+        ("รีวิว: history (ms)", "/review/seller/history/list",
+         {"start_time": ms_a, "end_time": ms_b, "limit": 5, "offset": 0}),
+        ("รีวิว: history (sec)", "/review/seller/history/list",
+         {"start_time": sec_a, "end_time": sec_b, "limit": 5, "offset": 0}),
+        ("รีวิว: list v2 (item_id)", "/review/seller/list/v2",
+         {"id_list": json.dumps([item_id]) if item_id else "[]", "review_type": "all"}),
+        ("จัดส่ง: trace", "/logistic/order/trace", ({"order_id": oid} if oid else {})),
         ("ออเดอร์รายตัว (มี voucher)", "/order/get", ({"order_id": oid} if oid else {})),
     ]
     out = []
