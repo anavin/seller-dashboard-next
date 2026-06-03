@@ -182,6 +182,10 @@ def _build_rows(raw, items_by, sku_cat):
             "platform_fee": 0.0,
             "buyer_key": _buyer_key(o),
             "payment_method": str(o.get("payment_method", "") or "").strip(),
+            "voucher": float(o.get("voucher", 0) or 0),
+            "voucher_seller": float(o.get("voucher_seller", 0) or 0),
+            "voucher_platform": float(o.get("voucher_platform", 0) or 0),
+            "voucher_code": str(o.get("voucher_code", "") or ""),
             "created_at_lz": str(o.get("created_at", "")),
         })
         for n, it in enumerate(items_by.get(oid, [])):

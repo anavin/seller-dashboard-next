@@ -312,6 +312,9 @@
         <div class="card c-7"><div class="ctitle">ยอดขายตามวิธีจ่าย รายเดือน</div><div class="csub">เทรนด์ COD vs จ่ายล่วงหน้า</div><div class="chart-wrap sm"><canvas id="payTrendChart"></canvas></div></div>
         <div class="card c-6"><div class="ctitle">AOV ตามวิธีจ่าย</div><div class="csub">วิธีจ่ายไหนยอดต่อบิลสูง</div><div class="chart-wrap sm"><canvas id="payAovChart"></canvas></div></div>
         <div class="card c-6"><div class="ctitle">อัตรายกเลิก/คืน ตามวิธีจ่าย</div><div class="csub">COD มักยกเลิกสูงกว่า</div><div class="chart-wrap sm"><canvas id="payCancelChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">ออเดอร์ใช้ส่วนลด</div><div class="csub">ใช้โค้ด/voucher vs ไม่ใช้</div><div class="chart-wrap sm"><canvas id="voucherUseChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">AOV: ใช้ส่วนลด vs ไม่ใช้</div><div class="csub">ส่วนลดดันยอดต่อบิลไหม</div><div class="chart-wrap sm"><canvas id="voucherAovChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">มูลค่าส่วนลดรายเดือน</div><div class="csub">ร้านออกเอง vs แพลตฟอร์มออก</div><div class="chart-wrap sm"><canvas id="voucherMonChart"></canvas></div></div>
       </div>
     </section>
 
@@ -740,6 +743,7 @@ function render(){
   renderHeatmap(curSet);
   renderDist(curSet);
   renderPayment(curSet);
+  renderVoucher(curSet);
   renderInsight();
   renderFinance();
   renderAdvanced();
@@ -796,6 +800,28 @@ function renderPayment(curSet){
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>v.toFixed(0)+'%'}}}}});
   toggleCard('payChart', any); toggleCard('payTrendChart', any);
   toggleCard('payAovChart', any); toggleCard('payCancelChart', any);
+}
+// ---------- ส่วนลด / Voucher ----------
+function renderVoucher(curSet){
+  const accent=cssvar('--accent');
+  let used=0,notu=0,revU=0,revN=0,ordU=0,ordN=0; const mon={}; let any=false;
+  for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
+    const m=orderMatch(o); if(m.rev<=0)continue;
+    const v=o.voucher||0; if(v>0)any=true;
+    if(v>0){used++;revU+=m.rev;ordU++;}else{notu++;revN+=m.rev;ordN++;}
+    const k=(o.date||'').slice(0,7); (mon[k]||(mon[k]={s:0,p:0})); mon[k].s+=o.voucher_seller||0; mon[k].p+=o.voucher_platform||0;
+  }
+  mk('voucherUseChart',{type:'doughnut',data:{labels:['ใช้ส่วนลด','ไม่ใช้'],datasets:[{data:[used,notu],backgroundColor:['#f59e0b',accent],borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  mk('voucherAovChart',{type:'bar',data:{labels:['ใช้ส่วนลด','ไม่ใช้'],datasets:[{data:[ordU?revU/ordU:0,ordN?revN/ordN:0],backgroundColor:['#f59e0b',accent],borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  const mks=Object.keys(mon).sort();
+  mk('voucherMonChart',{type:'bar',data:{labels:mks,datasets:[
+    {label:'ร้านออกเอง',data:mks.map(k=>mon[k].s),backgroundColor:'#ef4444'},
+    {label:'แพลตฟอร์มออก',data:mks.map(k=>mon[k].p),backgroundColor:accent}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{callback:fmtK}}}}});
+  toggleCard('voucherUseChart',any);toggleCard('voucherAovChart',any);toggleCard('voucherMonChart',any);
 }
 // ---------- ลูกค้า: ใหม่ vs ซื้อซ้ำ (จากลายนิ้วมือที่อยู่) ----------
 function renderCustomers(){
@@ -1449,6 +1475,9 @@ const CHART_HELP=[
   ['ยอดขายตามวิธีจ่าย','ยอดขายแยกตามวิธีชำระเงิน รายเดือน — ดูเทรนด์ COD เทียบจ่ายล่วงหน้า'],
   ['AOV ตามวิธีจ่าย','ยอดเฉลี่ยต่อบิลของแต่ละวิธีจ่าย — วิธีไหนลูกค้าจ่ายเยอะกว่า'],
   ['อัตรายกเลิก/คืน ตามวิธีจ่าย','% ออเดอร์ที่ถูกยกเลิก/คืน แยกตามวิธีจ่าย — COD มักเสี่ยงยกเลิกสูงกว่าจ่ายล่วงหน้า'],
+  ['ออเดอร์ใช้ส่วนลด','สัดส่วนออเดอร์ที่ใช้โค้ดส่วนลด/voucher เทียบกับไม่ใช้'],
+  ['AOV: ใช้ส่วนลด vs','ยอดเฉลี่ยต่อบิลของออเดอร์ที่ใช้ส่วนลด เทียบไม่ใช้ — ส่วนลดกระตุ้นให้ซื้อเยอะขึ้นไหม'],
+  ['มูลค่าส่วนลดรายเดือน','ส่วนลดรวมรายเดือน แยกว่าร้านออกเอง (voucher_seller) กับแพลตฟอร์มออกให้ (voucher_platform)'],
   ['รายได้: ลูกค้าใหม่ vs ซ้ำ','สัดส่วนรายได้ที่มาจากลูกค้าใหม่เทียบลูกค้าเดิม — ฐานลูกค้าประจำสร้างรายได้แค่ไหน'],
   ['AOV: ลูกค้าใหม่ vs ซ้ำ','ยอดเฉลี่ย/บิล เทียบลูกค้าใหม่กับลูกค้าซ้ำ — ลูกค้าประจำมักจ่ายมากกว่า'],
   ['ระยะห่างก่อนกลับมาซื้อ','จำนวนวันระหว่างการซื้อแต่ละครั้งของลูกค้าซ้ำ — ไว้จับจังหวะส่งโปร/เตือนซื้อซ้ำ'],

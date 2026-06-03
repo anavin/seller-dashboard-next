@@ -87,6 +87,9 @@ def build_from_db():
         "platform_fee": float(o.get("platform_fee", 0) or 0),
         "buyer": o.get("buyer_key", "") or "",
         "payment": _pay_group(o.get("payment_method", "")),
+        "voucher": float(o.get("voucher", 0) or 0),
+        "voucher_seller": float(o.get("voucher_seller", 0) or 0),
+        "voucher_platform": float(o.get("voucher_platform", 0) or 0),
         "items": by_order.get(o["order_id"], []),
     } for o in orders]
 
