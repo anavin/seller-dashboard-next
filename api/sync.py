@@ -97,6 +97,14 @@ def sb_get(table, query):
     return r.json()
 
 
+def sb_count(table, query):
+    """นับจำนวนแถวแบบเบา ๆ (ไม่ดึงข้อมูล) ผ่าน content-range header"""
+    h = sb_headers({"Prefer": "count=exact", "Range": "0-0"})
+    r = requests.get(f"{SB_URL}/rest/v1/{table}?{query}", headers=h, timeout=20)
+    cr = r.headers.get("content-range", "*/0")
+    return int(cr.split("/")[-1]) if "/" in cr else 0
+
+
 def sb_upsert(table, rows, on_conflict):
     if not rows:
         return
@@ -190,11 +198,11 @@ def _month_windows(start, end):
 
 
 # ---------- sync ----------
-def run_sync(force_days=None, from_date=None, to_date=None):
+def run_sync(force_days=None, from_date=None, to_date=None, fill_all=False, since_date=None):
     app_key = os.environ["LZ_APP_KEY"]
     app_secret = os.environ["LZ_APP_SECRET"]
     now = datetime.datetime.now().astimezone()
-    backfill = bool(force_days or from_date or to_date)
+    backfill = bool(force_days or from_date or to_date or fill_all)
     # อ่านสถานะล่าสุด + refresh_token ที่เก็บไว้ (กัน token หมดอายุ — ต่ออายุเองทุกครั้ง)
     state = sb_get("lz_sync", "id=eq.1&select=last_sync_time,refresh_token")
     stored_rt = state[0].get("refresh_token") if state else None
@@ -205,6 +213,43 @@ def run_sync(force_days=None, from_date=None, to_date=None):
     def _isod(d, end=False):
         t = datetime.time(23, 59, 59) if end else datetime.time(0, 0, 0)
         return datetime.datetime.combine(d, t).replace(tzinfo=now.tzinfo).isoformat()
+
+    if fill_all:
+        # โหมดเติมอัตโนมัติ: ไล่เช็คทีละเดือน เดือนไหนยังไม่มีข้อมูลใน DB ค่อยดึง
+        # ดึงได้สูงสุด 4 เดือน/รอบ (กัน timeout) — ถ้ายังไม่ครบจะตอบ more=true ให้เรียกซ้ำ
+        start = datetime.date.fromisoformat(since_date) if since_date else datetime.date(2024, 1, 1)
+        end = now.date()
+        sku_cat = {}
+        try:
+            for r in sb_get("lz_products", "select=sku,category&limit=10000"):
+                if r.get("sku"):
+                    sku_cat[r["sku"]] = r.get("category") or ""
+        except Exception:
+            pass
+        filled, skipped, budget, more = [], 0, 4, False
+        for ws, we in _month_windows(start, end):
+            if budget <= 0:
+                more = True
+                break
+            try:
+                cnt = sb_count("lz_orders", "select=order_id&date=gte.%s&date=lte.%s"
+                               % (ws.isoformat(), we.isoformat()))
+            except Exception:
+                cnt = 0
+            if cnt > 0:
+                skipped += 1
+                continue
+            raw = _fetch_orders(access, app_key, app_secret,
+                                {"created_after": _isod(ws), "created_before": _isod(we, end=True)})
+            items_by = _fetch_items(access, app_key, app_secret, [str(o.get("order_id")) for o in raw])
+            orows, irows = _build_rows(raw, items_by, sku_cat)
+            _write_orders(orows, irows)
+            filled.append({"month": ws.strftime("%Y-%m"), "orders": len(orows)})
+            budget -= 1
+        sb_upsert("lz_sync", [{"id": 1, "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
+        return {"ok": True, "mode": "fill_all", "filled": filled, "skipped_existing": skipped,
+                "more": more, "range": "%s..%s" % (start.isoformat(), end.isoformat()),
+                "hint": "more=true → เรียก URL เดิมซ้ำอีกครั้งจนกว่าจะ false"}
 
     if backfill:
         # ดึงตาม "วันที่สร้างออเดอร์" ทีละเดือน + commit ทุกเดือน (timeout ก็ไม่เสียของเก่า)
@@ -298,8 +343,11 @@ class handler(BaseHTTPRequestHandler):
         force_days = qs.get("days", [None])[0]
         from_date = qs.get("from", [None])[0]
         to_date = qs.get("to", [None])[0]
+        fill_all = qs.get("backfill", [""])[0] == "all"
+        since_date = qs.get("since", [None])[0]
         try:
-            self._send(200, run_sync(force_days=force_days, from_date=from_date, to_date=to_date))
+            self._send(200, run_sync(force_days=force_days, from_date=from_date, to_date=to_date,
+                                     fill_all=fill_all, since_date=since_date))
         except Exception as e:
             self._send(500, {"error": str(e)})
 
