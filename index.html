@@ -265,6 +265,7 @@
         <button data-win="1460">4 ปี</button>
         <button data-win="all">ทั้งหมด</button>
       </div>
+      <select id="yearSel" title="ดูทั้งปี (พ.ศ.)"><option value="">เลือกปี ▾</option></select>
       <div class="chips" id="pltChips">
         <span class="chip on tiktok" data-plt="tiktok"><span class="dot" style="background:var(--tiktok)"></span>TikTok</span>
         <span class="chip on shopee" data-plt="shopee"><span class="dot" style="background:var(--shopee)"></span>Shopee</span>
@@ -1394,11 +1395,29 @@ $('#winSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   }else{
     state.win=+b.dataset.win; state.mode='preset';
   }
-  render(); syncDateInputs();};
+  render(); syncDateInputs(); $('#yearSel').value='';};
+// ---------- เมนูเลือกดูทั้งปี (พ.ศ.) ----------
+function buildYearOptions(){
+  const ys=new Set();
+  (DATA.orders||[]).forEach(o=>{if(o.date)ys.add(o.date.slice(0,4));});
+  const years=[...ys].sort().reverse();
+  $('#yearSel').innerHTML='<option value="">เลือกปี ▾</option>'+
+    years.map(y=>`<option value="${y}">ปี ${+y+543}</option>`).join('');
+}
+$('#yearSel').onchange=e=>{
+  const y=e.target.value; if(!y)return;
+  const min=DATA.meta.start_date, max=DATA.meta.end_date;
+  let from=y+'-01-01', to=y+'-12-31';
+  if(min&&from<min)from=min; if(max&&to>max)to=max;   // ไม่ให้เกินช่วงที่มีข้อมูล
+  state.mode='custom'; state.from=from; state.to=to;
+  $('#winSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+  render(); syncDateInputs();
+};
 function syncDateInputs(){const {curD}=getWindows(); $('#dFrom').value=curD[0]; $('#dTo').value=curD[curD.length-1];}
 function onDateChange(){state.mode='custom'; state.from=$('#dFrom').value; state.to=$('#dTo').value;
   if(!state.from||!state.to)return;
-  $('#winSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active')); render();}
+  $('#winSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+  $('#yearSel').value=''; render();}
 // ---------- ปฏิทิน custom: วันที่ไม่มีข้อมูลจะเป็นสีเทา เลือกไม่ได้ ----------
 const DATE_SET=new Set();
 function buildDateSet(){DATE_SET.clear();(DATA.orders||[]).forEach(o=>{if(o.date)DATE_SET.add(o.date);});}
@@ -1668,6 +1687,7 @@ function afterLoad(){
   }
   $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
     DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
+  buildYearOptions();  // เมนูเลือกดูทั้งปี (พ.ศ.)
   buildCatColors();   // สีประจำหมวด คงที่ทุกกราฟ
   // เซ็ตวันที่มีข้อมูลจริง (ใช้ระบายสีเทาในปฏิทิน) + จำกัดช่วง
   buildDateSet();
