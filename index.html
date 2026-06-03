@@ -273,7 +273,6 @@
       <div id="calPop" class="cal-pop"></div>
       <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
       <button id="backfillBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงออเดอร์ (รวมลูกค้า+วิธีจ่าย) + การเงิน ย้อนหลังทั้งหมด">🔄 ดึงทั้งหมด</button>
-      <button id="financeBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงเฉพาะข้อมูลการเงิน (ยอดโอน) ย้อนหลัง">💵 ดึงการเงิน</button>
     </div>
   </div>
 
@@ -506,6 +505,19 @@ function applyVisibility(){
 
 // ---------- aggregation ----------
 function matchCat(it){return state.category==='all'||it.category===state.category;}
+// จัดกลุ่มวิธีชำระเงิน (ละเอียด -> หมวดใหญ่ที่อ่านง่าย)
+function payGroup(p){
+  const s=(p||'').toUpperCase().trim();
+  if(!s) return 'ไม่ระบุ';
+  if(s.includes('COD')) return 'เก็บปลายทาง (COD)';
+  if(s.includes('PROMPTPAY')) return 'PromptPay';
+  if(s.includes('VIRTUAL_ACCOUNT')||s.includes('_BANK')||s.includes('BANK_VA')||s.includes('BANK_ONLINE')) return 'โอนผ่านธนาคาร';
+  if(s.includes('CARD')||s.includes('PAY_LATER')||s.includes('CREDIT')||s.includes('DEBIT')||s.includes('INSTALLMENT')) return 'บัตร/ผ่อน';
+  if(s.includes('TMN')||s.includes('WALLET')||s.includes('LINE_PAY')||s.includes('RABBIT')||s.includes('PAYMENT_ACCOUNT')) return 'e-Wallet';
+  if(s.includes('OTC')||s.includes('SEVENELEVEN')||s.includes('COUNTER')) return 'เคาน์เตอร์/ร้านสะดวกซื้อ';
+  if(s.includes('ZERO')||s.includes('FREE')) return 'ฟรี/0 บาท';
+  return 'อื่นๆ';
+}
 // แยกขนาด (ml) จากชื่อ/SKU เช่น "30ml", "50 ml" -> "30ml"; ถ้าไม่เจอ -> "อื่นๆ"
 const ML_FIX={54:50};   // แก้ค่าที่ผิด: 54ml -> 50ml
 function mlOf(it){
@@ -720,7 +732,7 @@ function renderPayment(curSet){
   const pal=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4','#ec4899','#64748b'];
   const cnt={}, monPay={}, payRev={}, payTot={}, payCan={}; let any=false;
   for(const o of ordersIn(curSet)){
-    const p=(o.payment||'').trim()||'ไม่ระบุ'; if(o.payment)any=true;
+    const p=payGroup(o.payment); if(o.payment)any=true;
     const cancelled=(o.status==='cancelled'||o.status==='returned');
     payTot[p]=(payTot[p]||0)+1; if(cancelled)payCan[p]=(payCan[p]||0)+1;
     if(cancelled)continue;
@@ -861,9 +873,10 @@ function renderAdvanced(){
       scales:{x:{title:{display:true,text:'ยอดขาย 90 วัน'},ticks:{callback:fmtK}},y:{title:{display:true,text:'เติบโต %'},ticks:{callback:v=>v+'%'}}}}});
   // ===== 4) ยกเลิก/คืน ตามหมวด =====
   const cTot={},cCan={};
+  const cancelHide=new Set(['Air Fresheners','Beliefs & Religious Decoration']);
   for(const o of allO)for(const i of o.items){if(!i.category)continue;cTot[i.category]=(cTot[i.category]||0)+1;
     if(o.status==='cancelled'||o.status==='returned')cCan[i.category]=(cCan[i.category]||0)+1;}
-  const cc=Object.keys(cTot);
+  const cc=Object.keys(cTot).filter(c=>!cancelHide.has(c));
   mk('cancelChart',{type:'bar',data:{labels:cc,datasets:[{data:cc.map(c=>cTot[c]?(cCan[c]||0)/cTot[c]*100:0),backgroundColor:cc.map(c=>catColor(c)),borderRadius:6}]},
     options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>v.toFixed(0)+'%'}}}}});
   // ===== 5) ml เชิงลึก =====
@@ -1458,28 +1471,6 @@ async function backfillAll(){
 }
 $('#backfillBtn').onclick=backfillAll;
 // ---------- ดึงการเงิน: วนเรียก finance=1 จนกว่า more=false ----------
-async function financeAll(){
-  const pw=(()=>{try{return sessionStorage.getItem('dpw');}catch(e){return null;}})();
-  if(!pw){alert('กรุณาเข้าสู่ระบบใหม่ก่อน');return;}
-  const sy=parseInt(prompt('ดึงข้อมูลการเงินย้อนหลังตั้งแต่ปี ค.ศ. ไหน?\nเช่น 2021','2021')||'',10);
-  if(!sy||sy<2015||sy>new Date().getFullYear())return;
-  const since=`${sy}-01-01`;
-  const btn=$('#financeBtn'); btn.disabled=true;
-  let total=0, round=0, more=true;
-  while(more && round<80){
-    round++; btn.textContent=`⏳ ดึงการเงิน รอบ ${round}…`;
-    try{
-      const r=await fetch(`/api/sync?pw=${encodeURIComponent(pw)}&finance=${since}`);
-      const j=await r.json();
-      if(j.error){btn.textContent='⚠️ '+j.error; btn.disabled=false; return;}
-      total+=(j.txn_lines_added||j.statements_added||0); more=!!j.more;
-    }catch(e){more=false;}
-  }
-  btn.textContent=`✓ การเงิน +${total.toLocaleString()} บรรทัด`;
-  btn.disabled=false;
-  setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1000);
-}
-$('#financeBtn').onclick=financeAll;
 $('#kpiGrid').onclick=e=>{const c=e.target.closest('[data-kpi]'); if(c)openKpiDetail(c.dataset.kpi);};
 $('#kpiModalClose').onclick=()=>$('#kpiModal').style.display='none';
 $('#kpiModal').onclick=e=>{if(e.target.id==='kpiModal')$('#kpiModal').style.display='none';};
