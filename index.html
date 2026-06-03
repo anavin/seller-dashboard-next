@@ -206,6 +206,7 @@
     <a data-sec="inventory"><span class="ic">🏷️</span> สต็อก</a>
     <a data-sec="finance"><span class="ic">💵</span> การเงิน</a>
     <a data-sec="insight"><span class="ic">🔍</span> วิเคราะห์เชิงลึก</a>
+    <a data-sec="advanced"><span class="ic">📊</span> วิเคราะห์ขั้นสูง</a>
   </nav>
   <div class="side-foot">
     <button class="theme-btn" id="themeBtn"><span id="themeIc">🌙</span> <span id="themeTxt">โหมดมืด</span></button>
@@ -367,6 +368,21 @@
       </div>
     </section>
 
+    <!-- ADVANCED / วิเคราะห์ขั้นสูง -->
+    <section class="section" id="sec-advanced">
+      <h2><span class="bar"></span>วิเคราะห์ขั้นสูง <span class="hint">ใช้ข้อมูลทั้งหมด</span></h2>
+      <div class="grid kpis" id="advKpi"></div>
+      <div class="grid charts" style="margin-top:14px">
+        <div class="card c-8"><div class="ctitle">พยากรณ์ยอดขาย 3 เดือนข้างหน้า</div><div class="csub">เส้นทึบ = จริง · เส้นประเขียว = คาดการณ์ (เทรนด์+ฤดูกาล)</div><div class="chart-wrap"><canvas id="forecastChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">วันแคมเปญดันยอดแค่ไหน</div><div class="csub">ยอดเฉลี่ย/วัน แยกประเภทวัน</div><div class="chart-wrap"><canvas id="campaignChart"></canvas></div></div>
+        <div class="card c-7"><div class="ctitle">Growth Matrix สินค้า</div><div class="csub">แกนนอน=ยอดขาย 90วัน · แกนตั้ง=เติบโต% · เขียว=ดาวรุ่ง แดง=ควรตัด</div><div class="chart-wrap"><canvas id="growthChart"></canvas></div></div>
+        <div class="card c-5"><div class="ctitle">อัตรายกเลิก/คืน ตามหมวด</div><div class="csub">% ของออเดอร์ที่ถูกยกเลิก/คืน</div><div class="chart-wrap"><canvas id="cancelChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">ราคาเฉลี่ย/ชิ้น ตามขนาด (ml)</div><div class="csub">ขนาดไหนมูลค่าต่อชิ้นสูง</div><div class="chart-wrap sm"><canvas id="mlPriceChart"></canvas></div></div>
+        <div class="card c-5"><div class="ctitle">ขนาด (ml) นิยมในแต่ละหมวด</div><div class="csub">จำนวนชิ้นแยกขนาด × หมวด (ซ้อน)</div><div class="chart-wrap sm"><canvas id="mlCatChart"></canvas></div></div>
+        <div class="card c-3"><div class="ctitle">กรุงเทพฯ vs ต่างจังหวัด</div><div class="csub">สัดส่วนรายได้</div><div class="chart-wrap sm"><canvas id="bkkChart"></canvas></div></div>
+      </div>
+    </section>
+
     <div style="text-align:center;color:var(--soft);font-size:12px;padding:8px 0 20px">
       อัปเดตข้อมูล: รัน <code>python run.py</code> แล้ว push ขึ้น GitHub · ข้อมูลคำนวณสดในเบราว์เซอร์ตามฟิลเตอร์
     </div>
@@ -399,6 +415,8 @@ const CAT_PALETTE=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4','
 let CAT_COLORS={};
 function buildCatColors(){CAT_COLORS={};(DATA&&DATA.meta&&DATA.meta.categories||[]).forEach((c,i)=>{CAT_COLORS[c]=CAT_PALETTE[i%CAT_PALETTE.length];});}
 function catColor(c){return CAT_COLORS[c]||'#94a3b8';}
+// 50 เขตของกรุงเทพฯ (ใช้แยก กทม. vs ต่างจังหวัด จากชื่อเขต)
+const BKK_KHET=new Set(['พระนคร','ดุสิต','หนองจอก','บางรัก','บางเขน','บางกะปิ','ปทุมวัน','ป้อมปราบศัตรูพ่าย','พระโขนง','มีนบุรี','ลาดกระบัง','ยานนาวา','สัมพันธวงศ์','พญาไท','ธนบุรี','บางกอกใหญ่','ห้วยขวาง','คลองสาน','ตลิ่งชัน','บางกอกน้อย','บางขุนเทียน','ภาษีเจริญ','หนองแขม','ราษฎร์บูรณะ','บางพลัด','ดินแดง','บึงกุ่ม','สาทร','บางซื่อ','จตุจักร','บางคอแหลม','ประเวศ','คลองเตย','สวนหลวง','จอมทอง','ดอนเมือง','ราชเทวี','ลาดพร้าว','วัฒนา','บางแค','หลักสี่','สายไหม','คันนายาว','สะพานสูง','วังทองหลาง','คลองสามวา','บางนา','ทวีวัฒนา','ทุ่งครุ','บางบอน']);
 // จัดรูปแบบป้ายแกนวันที่ให้อ่านง่าย: ช่วงสั้น=วัน/เดือน, ช่วงยาว=เดือน ปีพ.ศ.(2หลัก)
 function dateTick(iso,total){
   if(!iso)return ''; const p=(''+iso).split('-'); if(p.length<3)return iso;
@@ -635,6 +653,93 @@ function render(){
   renderDist(curSet);
   renderInsight();
   renderFinance();
+  renderAdvanced();
+}
+// ---------- วิเคราะห์ขั้นสูง (ใช้ข้อมูลทั้งหมด) ----------
+function renderAdvanced(){
+  const valid=DATA.orders.filter(o=>o.platform==='lazada'&&o.status!=='cancelled'&&o.status!=='returned');
+  const allO=DATA.orders.filter(o=>o.platform==='lazada');
+  const accent=cssvar('--accent');
+  const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
+  // ===== 1) พยากรณ์ =====
+  const mrev={}; for(const o of valid){const k=o.date.slice(0,7); mrev[k]=(mrev[k]||0)+revOf(o);}
+  const mkeys=Object.keys(mrev).sort();
+  const curMonth=(DATA.meta.end_date||'').slice(0,7);
+  const train=mkeys.filter(k=>k<curMonth);
+  const vals=train.map(k=>mrev[k]); const overall=vals.reduce((a,b)=>a+b,0)/(vals.length||1);
+  const segS=Array(12).fill(0),segC=Array(12).fill(0);
+  for(const k of train){const m=+k.slice(5,7)-1; segS[m]+=mrev[k];segC[m]++;}
+  const segIdx=segS.map((s,i)=>{const a=segC[i]?s/segC[i]:overall; return overall?a/overall:1;});
+  const last6=train.slice(-6);
+  const lvl=last6.map(k=>{const m=+k.slice(5,7)-1; return segIdx[m]?mrev[k]/segIdx[m]:mrev[k];});
+  const level=lvl.reduce((a,b)=>a+b,0)/(lvl.length||1);
+  const resid=train.map(k=>{const m=+k.slice(5,7)-1; return mrev[k]-level*segIdx[m];});
+  const std=Math.sqrt(resid.reduce((a,b)=>a+b*b,0)/(resid.length||1));
+  const fut=[]; let lastK=train[train.length-1]||curMonth; let fy=+lastK.slice(0,4),fm=+lastK.slice(5,7);
+  for(let i=0;i<3;i++){fm++;if(fm>12){fm=1;fy++;}fut.push(fy+'-'+String(fm).padStart(2,'0'));}
+  const hist=train.slice(-18); const labels=hist.concat(fut);
+  const realData=hist.map(k=>mrev[k]).concat([null,null,null]);
+  const fc=hist.map(()=>null); if(hist.length)fc[hist.length-1]=mrev[hist[hist.length-1]];
+  for(const f of fut){const m=+f.slice(5,7)-1; fc.push(Math.max(0,level*segIdx[m]));}
+  const bHi=fc.map(v=>v==null?null:v+std), bLo=fc.map(v=>v==null?null:Math.max(0,v-std));
+  mk('forecastChart',{data:{labels,datasets:[
+    {type:'line',label:'จริง',data:realData,borderColor:accent,tension:.3,pointRadius:0,borderWidth:2},
+    {type:'line',label:'พยากรณ์',data:fc,borderColor:'#10b981',borderDash:[5,4],tension:.3,pointRadius:3,borderWidth:2},
+    {type:'line',label:'_hi',data:bHi,borderColor:'transparent',backgroundColor:'#10b98118',fill:'+1',pointRadius:0},
+    {type:'line',label:'_lo',data:bLo,borderColor:'transparent',pointRadius:0}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true,filter:it=>it.text[0]!=='_'}}},
+      scales:{x:{ticks:{maxTicksLimit:12,autoSkip:true,maxRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{ticks:{callback:fmtK}}}}});
+  // ===== 2) วันแคมเปญ =====
+  const dayRev={}; for(const o of valid)dayRev[o.date]=(dayRev[o.date]||0)+revOf(o);
+  const occ={dd:0,pay:0,n:0},sm={dd:0,pay:0,n:0};
+  for(const d in dayRev){const Y=+d.slice(0,4),M=+d.slice(5,7),D=+d.slice(8,10);const lastD=new Date(Y,M,0).getDate();
+    let g=D===M?'dd':(D>=25&&D<=lastD?'pay':'n'); occ[g]++; sm[g]+=dayRev[d];}
+  const cAvg=[occ.dd?sm.dd/occ.dd:0,occ.pay?sm.pay/occ.pay:0,occ.n?sm.n/occ.n:0];
+  mk('campaignChart',{type:'bar',data:{labels:['แคมเปญ\n(เลขเบิ้ล)','เงินเดือนออก\n(25-สิ้นเดือน)','วันธรรมดา'],
+    datasets:[{data:cAvg,backgroundColor:['#ef4444','#f59e0b',accent],borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  // ===== 3) Growth Matrix =====
+  const end=DATA.meta.end_date,d90=addDays(end,-90),d180=addDays(end,-180);
+  const pcur={},pprev={};
+  for(const o of valid){const c=o.date>d90,p=o.date>d180&&o.date<=d90;if(!c&&!p)continue;
+    for(const i of o.items){const k=i.name||i.sku,v=i.qty*i.price;if(c)pcur[k]=(pcur[k]||0)+v;else pprev[k]=(pprev[k]||0)+v;}}
+  const pts=Object.keys(pcur).filter(k=>pcur[k]>0).map(k=>{const g=pprev[k]?(pcur[k]-pprev[k])/pprev[k]*100:100;return {x:pcur[k],y:Math.max(-100,Math.min(200,g)),k};});
+  const med=[...pts.map(p=>p.x)].sort((a,b)=>a-b)[Math.floor(pts.length/2)]||0;
+  mk('growthChart',{type:'scatter',data:{datasets:[{data:pts,
+    backgroundColor:pts.map(p=>p.y>=0&&p.x>=med?'#10b981':p.y>=0?'#5b6cff':p.x>=med?'#f59e0b':'#ef4444'),pointRadius:5}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw.k+': '+fmt(c.raw.x)+'฿ · '+c.raw.y.toFixed(0)+'%'}}},
+      scales:{x:{title:{display:true,text:'ยอดขาย 90 วัน'},ticks:{callback:fmtK}},y:{title:{display:true,text:'เติบโต %'},ticks:{callback:v=>v+'%'}}}}});
+  // ===== 4) ยกเลิก/คืน ตามหมวด =====
+  const cTot={},cCan={};
+  for(const o of allO)for(const i of o.items){if(!i.category)continue;cTot[i.category]=(cTot[i.category]||0)+1;
+    if(o.status==='cancelled'||o.status==='returned')cCan[i.category]=(cCan[i.category]||0)+1;}
+  const cc=Object.keys(cTot);
+  mk('cancelChart',{type:'bar',data:{labels:cc,datasets:[{data:cc.map(c=>cTot[c]?(cCan[c]||0)/cTot[c]*100:0),backgroundColor:cc.map(c=>catColor(c)),borderRadius:6}]},
+    options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>v.toFixed(0)+'%'}}}}});
+  // ===== 5) ml เชิงลึก =====
+  const mlU={},mlR={},mlCat={};
+  for(const o of valid)for(const i of o.items){const z=mlOf(i);mlU[z]=(mlU[z]||0)+i.qty;mlR[z]=(mlR[z]||0)+i.qty*i.price;
+    (mlCat[z]||(mlCat[z]={}))[i.category]=(mlCat[z][i.category]||0)+i.qty;}
+  const zk=Object.keys(mlU).sort((a,b)=>(parseInt(a)||9e9)-(parseInt(b)||9e9));
+  mk('mlPriceChart',{type:'bar',data:{labels:zk,datasets:[{data:zk.map(z=>mlU[z]?mlR[z]/mlU[z]:0),backgroundColor:accent,borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  const cats=DATA.meta.categories;
+  mk('mlCatChart',{type:'bar',data:{labels:zk,datasets:cats.map(c=>({label:c,data:zk.map(z=>(mlCat[z]&&mlCat[z][c])||0),backgroundColor:catColor(c)}))},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},scales:{x:{stacked:true},y:{stacked:true,ticks:{precision:0}}}}});
+  // ===== 6) กทม vs ตจว =====
+  let bRev=0,pRev=0,bN=0,pN=0;
+  for(const o of valid){const dist=(o.region||'').split('/')[0].trim();const r=revOf(o);
+    if(BKK_KHET.has(dist)){bRev+=r;bN++;}else{pRev+=r;pN++;}}
+  mk('bkkChart',{type:'doughnut',data:{labels:['กรุงเทพฯ','ต่างจังหวัด'],datasets:[{data:[bRev,pRev],backgroundColor:['#5b6cff','#10b981'],borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  // ===== KPI =====
+  const nextF=fc[fc.length-3]||0, upl=cAvg[2]?(cAvg[0]/cAvg[2]-1)*100:0;
+  const totCan=allO.filter(o=>o.status==='cancelled'||o.status==='returned').length, totAll=allO.length||1;
+  $('#advKpi').innerHTML=
+    kpiCard('คาดยอดเดือนหน้า ('+fut[0].slice(5)+')',fmt(nextF)+' ฿')+
+    kpiCard('วันแคมเปญดันยอด',(upl>=0?'+':'')+upl.toFixed(0)+'%')+
+    kpiCard('อัตรายกเลิก/คืนรวม',(totCan/totAll*100).toFixed(1)+'%')+
+    kpiCard('สัดส่วนยอด กทม.',((bRev+pRev)?bRev/(bRev+pRev)*100:0).toFixed(0)+'%');
 }
 // ---------- การเงิน: ยอดโอนจริงจาก Lazada (ใช้ข้อมูลทั้งหมด) ----------
 function renderFinance(){
@@ -1116,6 +1221,13 @@ const CHART_HELP=[
   ['ยอดโอนสุทธิ','ยอดขายที่ settle แล้ว (น้ำเงิน), ค่าธรรมเนียมที่ Lazada หัก (แดง), และยอดที่โอนเข้าบัญชีจริง (เขียว) รายเดือน — ตัวเลขจริงจาก Lazada Finance'],
   ['อัตราค่าธรรมเนียม','สัดส่วนค่าธรรมเนียมที่ถูกหัก เทียบยอดขาย เป็น % รายเดือน ยิ่งต่ำยิ่งดี'],
   ['ใบสรุปยอดโอน','รายการ settlement แต่ละใบจาก Lazada — ยอดขาย ค่าธรรมเนียม และยอดโอนสุทธิเข้าบัญชี'],
+  ['พยากรณ์ยอดขาย','คาดการณ์ยอด 3 เดือนข้างหน้าจากเทรนด์ + ฤดูกาล · แถบจาง = ช่วงคลาดเคลื่อนที่เป็นไปได้ (±1 SD)'],
+  ['วันแคมเปญดันยอด','ยอดขายเฉลี่ยต่อวัน เทียบ 3 แบบ: วันเลขเบิ้ล (1.1, 11.11…), วันเงินเดือนออก (25-สิ้นเดือน), และวันธรรมดา'],
+  ['Growth Matrix','จุด = 1 สินค้า · แกนนอน = ยอดขาย 90 วัน · แกนตั้ง = อัตราเติบโต % · เขียว=ดาวรุ่ง(ขายดี+โต) น้ำเงิน=ดาวรุ่งใหม่ ส้ม=วัวเงินสด(ขายดีแต่ตก) แดง=ควรตัด'],
+  ['อัตรายกเลิก/คืน ตามหมวด','% ออเดอร์ที่ถูกยกเลิก/คืน แยกตามหมวด — หมวดไหนมีปัญหามากสุด'],
+  ['ราคาเฉลี่ย/ชิ้น ตามขนาด','ราคาขายเฉลี่ยต่อชิ้นของแต่ละขนาดขวด (ml)'],
+  ['ขนาด (ml) นิยมในแต่ละหมวด','จำนวนชิ้นที่ขายแยกตามขนาด แล้วซ้อนสีตามหมวด — แต่ละหมวดนิยมขนาดไหน'],
+  ['กรุงเทพฯ vs ต่างจังหวัด','สัดส่วนรายได้ระหว่างเขตในกรุงเทพฯ (50 เขต) กับต่างจังหวัด'],
 ];
 function addChartHelp(){
   document.querySelectorAll('.content .ctitle').forEach(t=>{
