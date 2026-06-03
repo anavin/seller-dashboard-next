@@ -565,11 +565,14 @@ def db_stats():
     """เช็คช่วงข้อมูลใน DB แบบเบา ๆ (ไม่ดึงทุกแถว) — ใช้กับ /api/data?stats=1"""
     h = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"}
 
-    def _count(table):
-        r = requests.get(f"{SB_URL}/rest/v1/{table}?select=*&limit=1",
-                         headers={**h, "Prefer": "count=exact", "Range": "0-0"}, timeout=20)
-        cr = r.headers.get("content-range", "*/0")
-        return int(cr.split("/")[-1]) if "/" in cr else 0
+    def _count(table, filt=""):
+        try:
+            url = f"{SB_URL}/rest/v1/{table}?select=*&limit=1" + (("&" + filt) if filt else "")
+            r = requests.get(url, headers={**h, "Prefer": "count=exact", "Range": "0-0"}, timeout=20)
+            cr = r.headers.get("content-range", "*/0")
+            return int(cr.split("/")[-1]) if "/" in cr else -1
+        except Exception:
+            return -1
 
     def _one(query):
         r = requests.get(f"{SB_URL}/rest/v1/lz_orders?{query}", headers=h, timeout=20)
@@ -603,6 +606,14 @@ def db_stats():
             cur = (cur.replace(day=28) + datetime.timedelta(days=7)).replace(day=1)
 
     empty_months = [m["month"] for m in months if m["orders"] == 0]
+    # health: เช็กว่าแต่ละเมนูมีข้อมูลครบไหม (-1 = column/ตารางยังไม่มี = ยังไม่ deploy/alter)
+    health = {
+        "ลูกค้า (buyer_key)": _count("lz_orders", "buyer_key=not.is.null"),
+        "วิธีจ่าย (payment_method)": _count("lz_orders", "payment_method=not.is.null"),
+        "ส่วนลด (voucher>0)": _count("lz_orders", "voucher=gt.0"),
+        "การเงิน (lz_finance)": _count("lz_finance"),
+        "รีวิว (lz_reviews)": _count("lz_reviews"),
+    }
     return {
         "orders": _count("lz_orders"),
         "order_items": _count("lz_order_items"),
@@ -610,6 +621,8 @@ def db_stats():
         "first_order_date": first,
         "last_order_date": last,
         "span_days": span,
+        "health": health,
+        "_health_อ่านยังไง": "ตัวเลข>0 = เมนูนั้นมีข้อมูลใช้งานได้ · 0 = ตาราง/คอลัมน์มีแต่ยังไม่ได้ดึงข้อมูล (กดดึงทั้งหมด) · -1 = ยังไม่ได้ alter/deploy",
         "empty_months": empty_months,
         "by_month": months,
     }
