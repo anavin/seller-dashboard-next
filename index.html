@@ -409,8 +409,8 @@
     <section class="section" id="sec-insight">
       <h2><span class="bar"></span>วิเคราะห์เชิงลึก <span class="hint">ใช้ข้อมูลทั้งหมด ไม่ขึ้นกับช่วงวันที่ที่เลือก</span></h2>
       <div class="grid charts">
-        <div class="card c-6"><div class="ctitle">เทียบยอดขายปีต่อปี (YoY)</div><div class="csub">รายเดือน · แยกสีตามปี (พ.ศ.)</div><div class="chart-wrap sm"><canvas id="yoyChart"></canvas></div></div>
-        <div class="card c-6"><div class="ctitle">ฤดูกาล — เดือนไหนขายดี</div><div class="csub">ยอดเฉลี่ยรายเดือนข้ามปี (เขียว = พีค)</div><div class="chart-wrap sm"><canvas id="seasonChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">เทียบยอดขายปีต่อปี (YoY)</div><div class="csub">รายเดือน · แยกสีตามปี (พ.ศ.) · * = ปีที่ยังไม่ครบ (ซ่อนเดือนล่าสุดที่ยังไม่จบ)</div><div class="chart-wrap sm"><canvas id="yoyChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">ฤดูกาล — เดือนไหนขายดี</div><div class="csub">ยอดเฉลี่ยรายเดือนข้ามปี (เขียว = พีค) · ไม่นับเดือนล่าสุดที่ยังไม่จบ</div><div class="chart-wrap sm"><canvas id="seasonChart"></canvas></div></div>
         <div class="card c-12"><div class="ctitle">สัดส่วนหมวดหมู่ตามเวลา</div><div class="csub">ยอดขายแยกหมวด รายเดือน (ซ้อน)</div><div class="chart-wrap sm"><canvas id="catTimeChart"></canvas></div></div>
         <div class="card c-6"><div class="ctitle">📈 สินค้ามาแรง (90 วันล่าสุด vs ก่อนหน้า)</div><div class="csub">ยอดขายเพิ่มขึ้นมากสุด</div><div class="tbl-scroll" style="margin-top:8px"><table id="gainTable"></table></div></div>
         <div class="card c-6"><div class="ctitle">📉 สินค้าขาตก</div><div class="csub">ยอดขายลดลงมากสุด — ควรกระตุ้น/ลดสต็อก</div><div class="tbl-scroll" style="margin-top:8px"><table id="loseTable"></table></div></div>
@@ -587,6 +587,8 @@ function delta(cur,prev){
 // ---------- chart helpers ----------
 function mk(id,cfg){ if(charts[id])charts[id].destroy(); const el=document.getElementById(id); if(el)charts[id]=new Chart(el,cfg); }
 function clearCharts(ids){ ids.forEach(id=>{ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }); }
+// ตั้งคำบรรยายใต้หัวกราฟ (csub) ของการ์ดที่มี element id นั้น
+function setSub(innerId,text){const el=document.getElementById(innerId); if(!el)return; const card=el.closest('.card'); if(!card)return; const sub=card.querySelector('.csub'); if(sub)sub.textContent=text;}
 function applyChartTheme(){Chart.defaults.color=cssvar('--muted');Chart.defaults.borderColor=cssvar('--line');
   Chart.defaults.font.family='Inter, Noto Sans Thai, sans-serif';}
 // ซ่อนการ์ด/ส่วนที่ไม่มีข้อมูล (ข้อมูลจริงบางมิติว่าง) ให้หน้าดูแน่นและโปร
@@ -863,16 +865,24 @@ function renderCustomers(curSet){
     $('#custKpi').innerHTML='<div class="muted" style="padding:10px">ไม่มีข้อมูลลูกค้าในช่วงที่เลือก</div>';
     const t=$('#custTable'); if(t)t.innerHTML=''; return; }
   const accent=cssvar('--accent'); const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
+  // รู้ประวัติก่อนช่วงที่เลือก: buyer ที่เคยซื้อก่อนวันเริ่มช่วง = ลูกค้าเก่า (กันนับเป็น "ใหม่")
+  const wdates=[...curSet].sort(); const winFrom=wdates[0]||'';
+  const priorSeen=new Set();
+  for(const o of DATA.orders){ if(o.platform!=='lazada'||!o.buyer)continue;
+    if(o.status==='cancelled'||o.status==='returned')continue;
+    if((o.date||'')<winFrom)priorSeen.add(o.buyer); }
   const sorted=[...wk].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const seen=new Set(); let newOrd=0,retOrd=0,newRev=0,retRev=0; const byMonth={}, buyer={};
   for(const o of sorted){
-    const k=o.buyer, r=revOf(o), mo=(o.date||'').slice(0,7), first=!seen.has(k);
-    if(first){seen.add(k);newOrd++;newRev+=r;}else{retOrd++;retRev+=r;}
+    const k=o.buyer, r=revOf(o), mo=(o.date||'').slice(0,7), first=!seen.has(k)&&!priorSeen.has(k);
+    if(first){seen.add(k);newOrd++;newRev+=r;}else{seen.add(k);retOrd++;retRev+=r;}
     (byMonth[mo]||(byMonth[mo]={nw:new Set(),rt:0})); if(first)byMonth[mo].nw.add(k); else byMonth[mo].rt++;
     const b=buyer[k]||(buyer[k]={orders:0,rev:0,region:o.region||'',last:o.date,dates:[]});
     b.orders++; b.rev+=r; b.last=o.date; if(o.date)b.dates.push(o.date);
   }
-  const uniq=Object.keys(buyer).length, repeatB=Object.values(buyer).filter(b=>b.orders>=2).length;
+  const uniq=Object.keys(buyer).length;
+  // ซื้อซ้ำ = ซื้อ ≥2 ครั้งในช่วง หรือเคยซื้อมาก่อนช่วงแล้วกลับมาซื้ออีก
+  const repeatB=Object.entries(buyer).filter(([k,b])=>b.orders>=2||priorSeen.has(k)).length;
   const totOrd=newOrd+retOrd;
   $('#custKpi').innerHTML=
     kpiCard('ลูกค้าทั้งหมด (ไม่ซ้ำ)',fmt(uniq))+
@@ -964,6 +974,7 @@ function renderAdvanced(){
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
   // ===== 3) Growth Matrix =====
   const end=DATA.meta.end_date,d90=addDays(end,-90),d180=addDays(end,-180);
+  setSub('growthChart',`แกนนอน=ยอดขาย ${d90}→${end} · แกนตั้ง=เติบโต% เทียบ 90 วันก่อน · เขียว=ดาวรุ่ง แดง=ควรตัด`);
   const pcur={},pprev={};
   for(const o of valid){const c=o.date>d90,p=o.date>d180&&o.date<=d90;if(!c&&!p)continue;
     for(const i of o.items){const k=i.name||i.sku,v=i.qty*i.price;if(c)pcur[k]=(pcur[k]||0)+v;else pprev[k]=(pprev[k]||0)+v;}}
@@ -1057,15 +1068,18 @@ function renderInsight(){
   const valid=DATA.orders.filter(o=>o.platform==='lazada'&&o.status!=='cancelled'&&o.status!=='returned');
   const accent=cssvar('--accent'), pal=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4'];
   const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
+  // เดือนล่าสุดที่ยังไม่ครบ (partial) — ตัดออกจากค่าเฉลี่ย/ซ่อนใน YoY กันตัวเลขเพี้ยน
+  const partKey=(DATA.meta.end_date||'').slice(0,7), partY=+partKey.slice(0,4), partM=+partKey.slice(5,7)-1;
   // 1) YoY รายเดือน
   const ym={};
   for(const o of valid){const y=+o.date.slice(0,4),m=+o.date.slice(5,7)-1;(ym[y]||(ym[y]=Array(12).fill(0)))[m]+=revOf(o);}
   const years=Object.keys(ym).sort();
-  mk('yoyChart',{type:'bar',data:{labels:THMON,datasets:years.map((y,i)=>({label:''+((+y+543)%100),data:ym[y],backgroundColor:pal[i%pal.length],borderRadius:4}))},
+  mk('yoyChart',{type:'bar',data:{labels:THMON,datasets:years.map((y,i)=>({label:''+((+y+543)%100)+(+y===partY?'*':''),
+    data:(+y===partY)?ym[y].map((v,m)=>m===partM?null:v):ym[y],backgroundColor:pal[i%pal.length],borderRadius:4}))},
     options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},scales:{y:{ticks:{callback:fmtK}}}}});
-  // 2) Seasonality
+  // 2) Seasonality — ไม่นับเดือน partial
   const mSum=Array(12).fill(0),mCnt=Array(12).fill(0);
-  for(const y of years)for(let m=0;m<12;m++)if(ym[y][m]>0){mSum[m]+=ym[y][m];mCnt[m]++;}
+  for(const y of years)for(let m=0;m<12;m++)if(ym[y][m]>0&&!(+y===partY&&m===partM)){mSum[m]+=ym[y][m];mCnt[m]++;}
   const seas=mSum.map((v,i)=>mCnt[i]?v/mCnt[i]:0),peak=Math.max(...seas);
   mk('seasonChart',{type:'bar',data:{labels:THMON,datasets:[{data:seas,backgroundColor:seas.map(v=>v===peak&&v>0?'#10b981':accent),borderRadius:5}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
@@ -1080,6 +1094,10 @@ function renderInsight(){
       scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{callback:fmtK}}}}});
   // 4) มาแรง/ขาตก (90 วันล่าสุด vs ก่อนหน้า)
   const end=DATA.meta.end_date,d90=addDays(end,-90),d180=addDays(end,-180);
+  const refTxt=`${d90} → ${end} เทียบ ${d180} → ${d90} (อิงวันที่ข้อมูลล่าสุด)`;
+  setSub('gainTable','ยอดขายเพิ่มขึ้นมากสุด · '+refTxt);
+  setSub('loseTable','ยอดขายลดลงมากสุด · '+refTxt);
+  setSub('deadTable',`มีสต็อกแต่ไม่ขายเลยตั้งแต่ ${d90} → ${end}`);
   const cur={},prev={};
   for(const o of valid){const c=o.date>d90&&o.date<=end,p=o.date>d180&&o.date<=d90;if(!c&&!p)continue;
     for(const it of o.items){const k=it.name||it.sku;const v=it.qty*it.price;if(c)cur[k]=(cur[k]||0)+v;else prev[k]=(prev[k]||0)+v;}}
@@ -1258,16 +1276,22 @@ function renderProfit(curSet,s,net,netp,ad){
   const meaningful = s.cogs>0 || s.fee>0 || ad.spend>0;
   if(!meaningful) return;
   const noCost = s.cogs<=0;
-  const ph=$('#profitHint'); if(ph) ph.textContent = noCost
-    ? '⚠️ ยังไม่ได้ใส่ต้นทุนสินค้า — ตัวเลขกำไรยังไม่หักต้นทุน' : '';
+  // อัตราค่าธรรมเนียมจริงจาก Finance (ถ้ามี) ไว้เทียบกับค่าประมาณ
+  const fin=DATA.finance||[];
+  const fr=(()=>{const r=fin.reduce((a,x)=>a+(x.revenue||0),0),f=fin.reduce((a,x)=>a+Math.abs(x.fees||0),0);return r?f/r*100:0;})();
+  const estRate=s.rev?s.fee/s.rev*100:0;
+  const ph=$('#profitHint'); if(ph) ph.textContent =
+    (noCost ? '⚠️ ยังไม่ได้ใส่ต้นทุนสินค้า — ตัวเลขกำไรยังไม่หักต้นทุน · ' : '')
+    + 'ℹ️ ค่าธรรมเนียม/กำไรสุทธิเป็นค่าประมาณจากออเดอร์ (≈'+estRate.toFixed(1)+'%)'
+    + (fr? ' · อัตราจริงจาก Finance ≈'+fr.toFixed(1)+'% (ดูเมนูการเงิน)' : '');
   $('#profitKpi').innerHTML=
     kpiCard('ยอดขาย',fmt(s.rev)+' ฿')+
     kpiCard('ต้นทุนสินค้า (COGS)',fmt(s.cogs)+' ฿')+
-    kpiCard('ค่าธรรมเนียมแพลตฟอร์ม',fmt(s.fee)+' ฿')+
+    kpiCard('ค่าธรรมเนียมแพลตฟอร์ม (ประมาณ)',fmt(s.fee)+' ฿')+
     kpiCard('ค่าโฆษณา',fmt(ad.spend)+' ฿')+
     kpiCard('กำไรขั้นต้น',fmt(s.grossProfit)+' ฿')+
-    kpiCard('กำไรสุทธิ',fmt(net)+' ฿',delta(net,netp));
-  mk('waterfallChart',{type:'bar',data:{labels:['ยอดขาย','ต้นทุน','ค่าธรรมเนียม','ค่าโฆษณา','กำไรสุทธิ'],
+    kpiCard('กำไรสุทธิ (ประมาณ)',fmt(net)+' ฿',delta(net,netp));
+  mk('waterfallChart',{type:'bar',data:{labels:['ยอดขาย','ต้นทุน','ค่าธรรมเนียม*','ค่าโฆษณา','กำไรสุทธิ*'],
     datasets:[{data:[s.rev,-s.cogs,-s.fee,-ad.spend,net],
       backgroundColor:['#5b6cff','#ef4444','#f59e0b','#fb923c','#10b981'],borderRadius:6}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
