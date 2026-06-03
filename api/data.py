@@ -202,24 +202,30 @@ def api_probe():
     rt = rt or os.environ.get("LZ_REFRESH_TOKEN", "")
     access = _refresh(app_key, app_secret, rt)
     now = datetime.datetime.now().astimezone()
-    since = (now - datetime.timedelta(days=30)).replace(microsecond=0).isoformat()
+    # ออเดอร์เก่า ~50 วัน (น่าจะส่งถึงแล้ว มี tracking)
     oid = None
     try:
+        a = (now - datetime.timedelta(days=55)).replace(microsecond=0).isoformat()
+        b = (now - datetime.timedelta(days=45)).replace(microsecond=0).isoformat()
         d = _call(LAZADA_BASE, "/orders/get", app_key, app_secret, access,
-                  {"created_after": since, "limit": 1, "sort_direction": "DESC"})
+                  {"created_after": a, "created_before": b, "limit": 1, "sort_direction": "DESC"})
         orders = (d.get("data") or {}).get("orders") or []
         if orders:
             oid = str(orders[0].get("order_id"))
     except Exception:
         oid = None
+    st = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S %z")
+    et = now.strftime("%Y-%m-%d %H:%M:%S %z")
     cands = [
-        ("รีวิว: seller list v2", "/review/seller/list/v2", {"limit": 3, "offset": 0}),
-        ("รีวิว: seller history", "/review/seller/history/list", {"limit": 3, "offset": 0}),
-        ("คืนสินค้า: reverse order list", "/reverse/order/list", {"limit": 3, "offset": 0}),
-        ("คืนสินค้า: reason list", "/reverse/reason/list", {}),
-        ("จัดส่ง: logistics trace", "/logistic/order/trace", ({"order_id": oid} if oid else {})),
-        ("ออเดอร์รายตัว (รายละเอียดเต็ม)", "/order/get", ({"order_id": oid} if oid else {})),
-        ("สต็อกขายได้จริง", "/product/stock/sellable/get", {"limit": 3, "offset": 0}),
+        ("รีวิว: history (มี start_time)", "/review/seller/history/list",
+         {"start_time": st, "end_time": et, "limit": 5, "offset": 0}),
+        ("รีวิว: history (วันที่สั้น)", "/review/seller/history/list",
+         {"start_time": (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d"),
+          "end_time": now.strftime("%Y-%m-%d"), "limit": 5, "offset": 0}),
+        ("คืนสินค้า: order reverse list", "/order/reverse/list", {"limit": 5, "offset": 0}),
+        ("คืนสินค้า: rc list", "/rc/order/reverse/list", {"limit": 5, "offset": 0}),
+        ("จัดส่ง: trace (order เก่า)", "/logistic/order/trace", ({"order_id": oid} if oid else {})),
+        ("ออเดอร์รายตัว (มี voucher)", "/order/get", ({"order_id": oid} if oid else {})),
     ]
     out = []
     for label, path, params in cands:
