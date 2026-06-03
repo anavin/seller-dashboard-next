@@ -884,6 +884,7 @@ function renderCal(){
   pop.innerHTML=h+'</div>';
 }
 $('#calPop').addEventListener('click',e=>{
+  e.stopPropagation();   // กัน event เด้งไปถึง document แล้วปิดปฏิทินตอนกดลูกศร
   const nav=e.target.closest('.cal-nav');
   if(nav){let m=calState.m+(+nav.dataset.nav),y=calState.y;
     if(m<0){m=11;y--;}if(m>11){m=0;y++;}calState.m=m;calState.y=y;renderCal();return;}
