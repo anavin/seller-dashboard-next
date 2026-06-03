@@ -309,6 +309,8 @@
         <div class="card c-6"><div class="ctitle">การกระจายมูลค่าออเดอร์</div><div class="csub">ออเดอร์ส่วนใหญ่มูลค่าเท่าไหร่</div><div class="chart-wrap sm"><canvas id="valDistChart"></canvas></div></div>
         <div class="card c-5"><div class="ctitle">ประเภทการชำระเงิน</div><div class="csub">สัดส่วนออเดอร์ตามวิธีจ่าย (COD/โอน/บัตร)</div><div class="chart-wrap sm"><canvas id="payChart"></canvas></div></div>
         <div class="card c-7"><div class="ctitle">ยอดขายตามวิธีจ่าย รายเดือน</div><div class="csub">เทรนด์ COD vs จ่ายล่วงหน้า</div><div class="chart-wrap sm"><canvas id="payTrendChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">AOV ตามวิธีจ่าย</div><div class="csub">วิธีจ่ายไหนยอดต่อบิลสูง</div><div class="chart-wrap sm"><canvas id="payAovChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">อัตรายกเลิก/คืน ตามวิธีจ่าย</div><div class="csub">COD มักยกเลิกสูงกว่า</div><div class="chart-wrap sm"><canvas id="payCancelChart"></canvas></div></div>
       </div>
     </section>
 
@@ -379,6 +381,9 @@
         <div class="card c-5"><div class="ctitle">ออเดอร์: ลูกค้าใหม่ vs ซ้ำ</div><div class="csub">สัดส่วนจำนวนออเดอร์</div><div class="chart-wrap sm"><canvas id="newReturnChart"></canvas></div></div>
         <div class="card c-7"><div class="ctitle">จำนวนครั้งที่ลูกค้าซื้อ</div><div class="csub">ลูกค้าส่วนใหญ่ซื้อกี่ครั้ง</div><div class="chart-wrap sm"><canvas id="freqChart"></canvas></div></div>
         <div class="card c-12"><div class="ctitle">ลูกค้าใหม่ vs ออเดอร์ซ้ำ รายเดือน</div><div class="csub">น้ำเงิน=ลูกค้าใหม่ · เขียว=ออเดอร์จากลูกค้าเดิม</div><div class="chart-wrap sm"><canvas id="custTrendChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">รายได้: ลูกค้าใหม่ vs ซ้ำ</div><div class="csub">สัดส่วนรายได้</div><div class="chart-wrap sm"><canvas id="custRevChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">AOV: ลูกค้าใหม่ vs ซ้ำ</div><div class="csub">ยอดเฉลี่ย/ออเดอร์ — ลูกค้าซ้ำจ่ายมากกว่าไหม</div><div class="chart-wrap sm"><canvas id="custAovChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">ระยะห่างก่อนกลับมาซื้อ</div><div class="csub">นานแค่ไหนกว่าจะซื้อครั้งถัดไป</div><div class="chart-wrap sm"><canvas id="custGapChart"></canvas></div></div>
         <div class="card c-12"><div class="ctitle">ลูกค้าประจำ (ซื้อซ้ำมากสุด)</div><div class="csub">ปกปิดตัวตน — แสดงเป็นรหัส</div><div class="tbl-scroll" style="margin-top:10px"><table id="custTable"></table></div></div>
       </div>
     </section>
@@ -713,11 +718,14 @@ function render(){
 // ---------- ประเภทการชำระเงิน ----------
 function renderPayment(curSet){
   const pal=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4','#ec4899','#64748b'];
-  const cnt={}, monPay={}; let any=false;
-  for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
-    const m=orderMatch(o); if(m.rev<=0)continue;
+  const cnt={}, monPay={}, payRev={}, payTot={}, payCan={}; let any=false;
+  for(const o of ordersIn(curSet)){
     const p=(o.payment||'').trim()||'ไม่ระบุ'; if(o.payment)any=true;
-    cnt[p]=(cnt[p]||0)+1;
+    const cancelled=(o.status==='cancelled'||o.status==='returned');
+    payTot[p]=(payTot[p]||0)+1; if(cancelled)payCan[p]=(payCan[p]||0)+1;
+    if(cancelled)continue;
+    const m=orderMatch(o); if(m.rev<=0)continue;
+    cnt[p]=(cnt[p]||0)+1; payRev[p]=(payRev[p]||0)+m.rev;
     const mo=(o.date||'').slice(0,7); (monPay[mo]||(monPay[mo]={}))[p]=(monPay[mo][p]||0)+m.rev;
   }
   const keys=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
@@ -728,7 +736,13 @@ function renderPayment(curSet){
   mk('payTrendChart',{type:'bar',data:{labels:mks,datasets:keys.map(k=>({label:k,data:mks.map(m=>monPay[m][k]||0),backgroundColor:kcol[k]}))},
     options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
       scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{callback:fmtK}}}}});
+  mk('payAovChart',{type:'bar',data:{labels:keys,datasets:[{data:keys.map(k=>cnt[k]?payRev[k]/cnt[k]:0),backgroundColor:keys.map(k=>kcol[k]),borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  const ckeys=Object.keys(payTot).sort((a,b)=>payTot[b]-payTot[a]);
+  mk('payCancelChart',{type:'bar',data:{labels:ckeys,datasets:[{data:ckeys.map(k=>payTot[k]?(payCan[k]||0)/payTot[k]*100:0),backgroundColor:ckeys.map(k=>kcol[k]||'#ef4444'),borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>v.toFixed(0)+'%'}}}}});
   toggleCard('payChart', any); toggleCard('payTrendChart', any);
+  toggleCard('payAovChart', any); toggleCard('payCancelChart', any);
 }
 // ---------- ลูกค้า: ใหม่ vs ซื้อซ้ำ (จากลายนิ้วมือที่อยู่) ----------
 function renderCustomers(){
@@ -736,13 +750,13 @@ function renderCustomers(){
   if(!wk.length)return;
   const accent=cssvar('--accent'); const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
   const sorted=[...wk].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const seen=new Set(); let newOrd=0,retOrd=0; const byMonth={}, buyer={};
+  const seen=new Set(); let newOrd=0,retOrd=0,newRev=0,retRev=0; const byMonth={}, buyer={};
   for(const o of sorted){
     const k=o.buyer, r=revOf(o), mo=(o.date||'').slice(0,7), first=!seen.has(k);
-    if(first){seen.add(k);newOrd++;}else retOrd++;
+    if(first){seen.add(k);newOrd++;newRev+=r;}else{retOrd++;retRev+=r;}
     (byMonth[mo]||(byMonth[mo]={nw:new Set(),rt:0})); if(first)byMonth[mo].nw.add(k); else byMonth[mo].rt++;
-    const b=buyer[k]||(buyer[k]={orders:0,rev:0,region:o.region||'',last:o.date});
-    b.orders++; b.rev+=r; b.last=o.date;
+    const b=buyer[k]||(buyer[k]={orders:0,rev:0,region:o.region||'',last:o.date,dates:[]});
+    b.orders++; b.rev+=r; b.last=o.date; if(o.date)b.dates.push(o.date);
   }
   const uniq=Object.keys(buyer).length, repeatB=Object.values(buyer).filter(b=>b.orders>=2).length;
   const totOrd=newOrd+retOrd;
@@ -763,6 +777,18 @@ function renderCustomers(){
     {label:'ออเดอร์ซ้ำ',data:mks.map(m=>byMonth[m].rt),backgroundColor:'#10b981',borderRadius:4}]},
     options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
       scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{precision:0}}}}});
+  mk('custRevChart',{type:'doughnut',data:{labels:['ลูกค้าใหม่','ลูกค้าซ้ำ'],datasets:[{data:[newRev,retRev],backgroundColor:[accent,'#10b981'],borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  mk('custAovChart',{type:'bar',data:{labels:['ลูกค้าใหม่','ลูกค้าซ้ำ'],datasets:[{data:[newOrd?newRev/newOrd:0,retOrd?retRev/retOrd:0],backgroundColor:[accent,'#10b981'],borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  // ระยะห่างระหว่างการซื้อ (วัน) ของลูกค้าซ้ำ
+  const gap={'<7 วัน':0,'7-30 วัน':0,'31-90 วัน':0,'90+ วัน':0};
+  for(const b of Object.values(buyer)){ if(b.dates.length<2)continue;
+    const ds=[...b.dates].sort();
+    for(let i=1;i<ds.length;i++){const g=Math.round((new Date(ds[i]+'T00:00:00')-new Date(ds[i-1]+'T00:00:00'))/86400000);
+      gap[g<7?'<7 วัน':g<=30?'7-30 วัน':g<=90?'31-90 วัน':'90+ วัน']++;}}
+  mk('custGapChart',{type:'bar',data:{labels:Object.keys(gap),datasets:[{data:Object.values(gap),backgroundColor:'#9b5bff',borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{precision:0}}}}});
   const top=Object.entries(buyer).filter(e=>e[1].orders>=2).sort((a,b)=>b[1].orders-a[1].orders||b[1].rev-a[1].rev).slice(0,lim('custTable',20));
   $('#custTable').innerHTML='<thead><tr><th>ลูกค้า (ปกปิด)</th><th>พื้นที่</th><th class="num">จำนวนครั้ง</th><th class="num">ยอดรวม</th><th>ซื้อล่าสุด</th></tr></thead><tbody>'+
     (top.length?top.map(e=>`<tr><td class="muted">#${e[0].slice(0,6)}</td><td>${(e[1].region||'').split('/')[0]}</td><td class="num">${e[1].orders}</td><td class="num">${fmt(e[1].rev)}</td><td>${e[1].last}</td></tr>`).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">ยังไม่มีลูกค้าซื้อซ้ำในข้อมูล</td></tr>')+'</tbody>';
@@ -1359,6 +1385,11 @@ const CHART_HELP=[
   ['ยอดสั่งซื้อ vs','เทียบยอดสั่งซื้อจากออเดอร์ (น้ำเงิน) กับยอดที่เคลียร์ผ่าน Lazada Finance จริง (เขียว) · ช่องว่าง = เงินที่ยังรอเคลียร์ หรือหายไปจากของคืน/ยกเลิก'],
   ['ประเภทการชำระเงิน','สัดส่วนออเดอร์ตามวิธีจ่าย เช่น เก็บเงินปลายทาง (COD), โอน, บัตรเครดิต, e-wallet'],
   ['ยอดขายตามวิธีจ่าย','ยอดขายแยกตามวิธีชำระเงิน รายเดือน — ดูเทรนด์ COD เทียบจ่ายล่วงหน้า'],
+  ['AOV ตามวิธีจ่าย','ยอดเฉลี่ยต่อบิลของแต่ละวิธีจ่าย — วิธีไหนลูกค้าจ่ายเยอะกว่า'],
+  ['อัตรายกเลิก/คืน ตามวิธีจ่าย','% ออเดอร์ที่ถูกยกเลิก/คืน แยกตามวิธีจ่าย — COD มักเสี่ยงยกเลิกสูงกว่าจ่ายล่วงหน้า'],
+  ['รายได้: ลูกค้าใหม่ vs ซ้ำ','สัดส่วนรายได้ที่มาจากลูกค้าใหม่เทียบลูกค้าเดิม — ฐานลูกค้าประจำสร้างรายได้แค่ไหน'],
+  ['AOV: ลูกค้าใหม่ vs ซ้ำ','ยอดเฉลี่ย/บิล เทียบลูกค้าใหม่กับลูกค้าซ้ำ — ลูกค้าประจำมักจ่ายมากกว่า'],
+  ['ระยะห่างก่อนกลับมาซื้อ','จำนวนวันระหว่างการซื้อแต่ละครั้งของลูกค้าซ้ำ — ไว้จับจังหวะส่งโปร/เตือนซื้อซ้ำ'],
   ['ออเดอร์: ลูกค้าใหม่ vs ซ้ำ','สัดส่วนออเดอร์จากลูกค้าใหม่ (ซื้อครั้งแรก) กับลูกค้าเดิมที่กลับมาซื้อซ้ำ · ประเมินจากลายนิ้วมือที่อยู่จัดส่ง'],
   ['จำนวนครั้งที่ลูกค้าซื้อ','ลูกค้าแต่ละคนซื้อกี่ครั้ง (1, 2, 3-4, 5+ ครั้ง) — ดูฐานลูกค้าประจำ'],
   ['ลูกค้าใหม่ vs ออเดอร์ซ้ำ รายเดือน','น้ำเงิน=ลูกค้าใหม่ที่ซื้อครั้งแรกในเดือนนั้น · เขียว=ออเดอร์จากลูกค้าเดิม'],
