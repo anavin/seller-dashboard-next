@@ -129,6 +129,41 @@ def _refresh(app_key, app_secret, refresh_token):
     return d["access_token"]
 
 
+def finance_check():
+    """ทดสอบว่าแอปเปิดสิทธิ์ Finance/Ads API ไหม — ยิงจริงแล้วดู code/message ที่ Lazada ตอบ"""
+    app_key = os.environ["LZ_APP_KEY"]
+    app_secret = os.environ["LZ_APP_SECRET"]
+    rt = None
+    try:
+        sy = _sb_all("lz_sync", "refresh_token")
+        rt = sy[0].get("refresh_token") if sy else None
+    except Exception:
+        rt = None
+    rt = rt or os.environ.get("LZ_REFRESH_TOKEN", "")
+    access = _refresh(app_key, app_secret, rt)
+    end = datetime.date.today()
+    start = end - datetime.timedelta(days=7)
+    probes = [
+        ("finance: transaction details", "/finance/transaction/details/get",
+         {"start_time": start.isoformat(), "end_time": end.isoformat(), "limit": 1, "offset": 0}),
+        ("finance: payout status", "/finance/payout/status/get",
+         {"start_time": start.isoformat(), "end_time": end.isoformat()}),
+        ("ads: campaign list", "/sponsor/solutions/campaign/list",
+         {"start_date": start.isoformat(), "end_date": end.isoformat()}),
+    ]
+    out = []
+    for label, path, params in probes:
+        try:
+            d = _call(LAZADA_BASE, path, app_key, app_secret, access, params)
+            out.append({"api": label, "path": path, "ok": True,
+                        "code": str(d.get("code", "0")), "message": d.get("message", ""),
+                        "has_data": bool(d.get("data"))})
+        except Exception as e:
+            out.append({"api": label, "path": path, "ok": False, "result": str(e)})
+    return {"token_ok": bool(access), "probes": out,
+            "หมายเหตุ": "code 0 หรือ has_data=true = เปิดสิทธิ์แล้ว · ถ้าขึ้น IncompleteSignature/MissingParameter = ถึง API ได้ (สิทธิ์น่าจะมี แค่พารามิเตอร์) · ถ้าขึ้น ApiNotInWhiteList/permission/access denied = ยังไม่เปิดสิทธิ์"}
+
+
 def _hour(s):
     try:
         return int(str(s)[11:13])
@@ -359,10 +394,14 @@ class handler(BaseHTTPRequestHandler):
         pw = qs.get("pw", [""])[0]
         debug = qs.get("debug", ["0"])[0] in ("1", "true", "yes")
         stats = qs.get("stats", ["0"])[0] in ("1", "true", "yes")
+        fincheck = qs.get("fincheck", ["0"])[0] in ("1", "true", "yes")
         if pw != os.environ.get("DASH_PASSWORD", ""):
             self._send(401, {"error": "unauthorized"})
             return
         try:
+            if fincheck:
+                self._send(200, finance_check())
+                return
             if stats and SB_URL and SB_KEY:
                 self._send(200, db_stats())
                 return
