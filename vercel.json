@@ -1,6 +1,7 @@
 {
   "functions": {
-    "api/sync.py": { "maxDuration": 60 }
+    "api/sync.py": { "maxDuration": 60 },
+    "api/shopee_sync.py": { "maxDuration": 60 }
   },
   "crons": [
     { "path": "/api/sync", "schedule": "0 1 * * *" },

@@ -82,3 +82,57 @@ create index if not exists idx_items_order on lz_order_items(order_id);
 create index if not exists idx_orders_date on lz_orders(date);
 create index if not exists idx_finance_date on lz_finance(date);
 create index if not exists idx_reviews_item on lz_reviews(item_id);
+
+-- ============================================================
+-- Shopee (Open Platform API v2) — โครงเดียวกับ lz_* เพื่อ merge ง่าย
+-- ============================================================
+create table if not exists sp_orders (
+  order_id        text primary key,   -- order_sn ของ Shopee
+  date            date,
+  hour            int,
+  platform        text default 'shopee',
+  status          text,
+  region          text,               -- จังหวัด (recipient state)
+  customer        text default 'new',
+  shipping_fee    numeric default 0,
+  platform_fee    numeric default 0,
+  created_at_sp   text,
+  buyer_key       text,               -- ลายนิ้วมือผู้ซื้อ (จากที่อยู่จัดส่ง)
+  payment_method  text
+);
+
+create table if not exists sp_order_items (
+  order_id  text,
+  line      int,
+  sku       text,
+  name      text,
+  category  text default '',
+  qty       int default 1,
+  price     numeric default 0,
+  cost      numeric default 0,
+  primary key (order_id, line)
+);
+
+create table if not exists sp_products (
+  sku           text primary key,
+  name          text,
+  category      text default '',
+  price         numeric default 0,
+  cost          numeric default 0,
+  stock_shopee  int default 0
+);
+
+-- สถานะ sync + โทเคนของ Shopee (เก็บ shop_id/access/refresh token)
+create table if not exists sp_sync (
+  id              int primary key default 1,
+  shop_id         text,
+  access_token    text,
+  refresh_token   text,
+  token_expire    timestamptz,
+  last_sync_time  timestamptz,
+  updated_at      timestamptz default now()
+);
+insert into sp_sync (id) values (1) on conflict (id) do nothing;
+
+create index if not exists idx_sp_items_order on sp_order_items(order_id);
+create index if not exists idx_sp_orders_date on sp_orders(date);

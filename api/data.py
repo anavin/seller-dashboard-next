@@ -120,17 +120,23 @@ def build_from_db():
             return _sb_all(table)
         except Exception:
             return []
-    with ThreadPoolExecutor(max_workers=5) as ex:
+    with ThreadPoolExecutor(max_workers=8) as ex:
         f_orders = ex.submit(_sb_all, "lz_orders")
         f_items = ex.submit(_sb_all, "lz_order_items")
         f_products = ex.submit(_sb_all, "lz_products")
         f_finance = ex.submit(_safe_all, "lz_finance")
         f_reviews = ex.submit(_safe_all, "lz_reviews")
+        f_sp_orders = ex.submit(_safe_all, "sp_orders")
+        f_sp_items = ex.submit(_safe_all, "sp_order_items")
+        f_sp_products = ex.submit(_safe_all, "sp_products")
     orders = f_orders.result()
     items = f_items.result()
     products = f_products.result()
     _finance_rows = f_finance.result()
     _reviews_rows = f_reviews.result()
+    sp_orders = f_sp_orders.result()
+    sp_items = f_sp_items.result()
+    sp_products = f_sp_products.result()
 
     by_order = {}
     for it in items:
@@ -160,6 +166,40 @@ def build_from_db():
         "price": float(p.get("price", 0) or 0), "cost": float(p.get("cost", 0) or 0),
         "stock": {"tiktok": 0, "shopee": 0, "lazada": int(p.get("stock_lazada", 0) or 0)},
     } for p in products]
+
+    # ---------- Shopee: ต่อท้าย feed เป็น platform='shopee' (ถ้ามีตาราง sp_*) ----------
+    sp_by_order = {}
+    for it in sp_items:
+        sp_by_order.setdefault(it["order_id"], []).append({
+            "sku": it.get("sku", ""), "name": it.get("name", ""),
+            "category": it.get("category", "") or "",
+            "qty": int(it.get("qty", 1) or 1),
+            "price": float(it.get("price", 0) or 0), "cost": float(it.get("cost", 0) or 0),
+        })
+    order_rows += [{
+        "date": str(o.get("date", ""))[:10], "hour": int(o.get("hour", 12) or 12),
+        "platform": "shopee", "status": o.get("status", ""),
+        "region": o.get("region", "") or "", "customer": o.get("customer", "new"),
+        "shipping_fee": float(o.get("shipping_fee", 0) or 0),
+        "platform_fee": float(o.get("platform_fee", 0) or 0),
+        "buyer": o.get("buyer_key", "") or "",
+        "payment": _pay_group(o.get("payment_method", "")),
+        "voucher": 0, "voucher_seller": 0, "voucher_platform": 0,
+        "items": sp_by_order.get(o["order_id"], []),
+    } for o in sp_orders]
+    # รวมสต็อก Shopee เข้า prod_rows (จับคู่ด้วย sku ถ้ามี ไม่งั้นเพิ่มแถวใหม่)
+    _prod_idx = {p["sku"]: p for p in prod_rows}
+    for p in sp_products:
+        sku = p.get("sku", "")
+        stock = int(p.get("stock_shopee", 0) or 0)
+        if sku in _prod_idx:
+            _prod_idx[sku]["stock"]["shopee"] = stock
+        else:
+            prod_rows.append({
+                "sku": sku, "name": p.get("name", ""), "category": p.get("category", "") or "",
+                "price": float(p.get("price", 0) or 0), "cost": float(p.get("cost", 0) or 0),
+                "stock": {"tiktok": 0, "shopee": stock, "lazada": 0},
+            })
 
     dates = sorted({r["date"] for r in order_rows if r["date"]})
     cats = sorted({i["category"] for r in order_rows for i in r["items"] if i["category"]})
