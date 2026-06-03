@@ -113,7 +113,7 @@
   .card .csub{font-size:11px;color:var(--soft);margin-bottom:10px}
   .chart-wrap{position:relative;height:280px}
   .modal-lg{max-width:920px}
-  #chartModalBody{height:62vh;position:relative}
+  #chartModalBody{height:62vh;position:relative;overflow:auto}
   .expand-btn{position:absolute;top:10px;right:10px;width:26px;height:26px;border:1px solid var(--line);
     background:var(--panel2);color:var(--soft);border-radius:8px;cursor:pointer;font-size:13px;line-height:1;
     display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;z-index:3}
@@ -427,6 +427,9 @@ function dateTick(iso,total){
 }
 const $=s=>document.querySelector(s);
 let DATA=null, charts={};
+// ตอนกดขยายกราฟ (EXPAND_ID) ให้ Top list แสดง 100 อันดับ; ปกติแสดงตาม default
+let EXPAND_ID=null;
+function lim(id,def){return EXPAND_ID===id?100:def;}
 const state={win:30, platforms:new Set(['tiktok','shopee','lazada']), category:'all', mode:'preset', from:'', to:'', tab:'overview'};
 // ดักerror ที่ไม่ถูกจับ -> โชว์แทนการค้างเงียบ
 window.onerror=function(msg,src,line){var m=document.getElementById('metaLine');if(m)m.textContent='⚠️ '+msg+' (บรรทัด '+line+')';return false;};
@@ -825,18 +828,18 @@ function renderInsight(){
   const mv=keys.map(k=>({name:k,d:(cur[k]||0)-(prev[k]||0),c:cur[k]||0,p:prev[k]||0}));
   const moverRows=(arr,sign)=>arr.length?arr.map(m=>`<tr><td>${m.name}</td><td class="num">${fmt(m.p)}</td><td class="num">${fmt(m.c)}</td><td class="num ${sign>0?'pos':'neg'}">${sign>0?'+':''}${fmt(m.d)}</td></tr>`).join(''):'<tr><td colspan="4" class="muted" style="text-align:center;padding:14px">ไม่มีข้อมูลพอ</td></tr>';
   const head='<thead><tr><th>สินค้า</th><th class="num">ก่อนหน้า</th><th class="num">90วันล่าสุด</th><th class="num">เปลี่ยน</th></tr></thead><tbody>';
-  $('#gainTable').innerHTML=head+moverRows(mv.filter(m=>m.d>0).sort((a,b)=>b.d-a.d).slice(0,8),1)+'</tbody>';
-  $('#loseTable').innerHTML=head+moverRows(mv.filter(m=>m.d<0).sort((a,b)=>a.d-b.d).slice(0,8),-1)+'</tbody>';
+  $('#gainTable').innerHTML=head+moverRows(mv.filter(m=>m.d>0).sort((a,b)=>b.d-a.d).slice(0,lim('gainTable',8)),1)+'</tbody>';
+  $('#loseTable').innerHTML=head+moverRows(mv.filter(m=>m.d<0).sort((a,b)=>a.d-b.d).slice(0,lim('loseTable',8)),-1)+'</tbody>';
   // 5) Dead stock
   const sold90=new Set();for(const o of valid)if(o.date>d90)for(const it of o.items)sold90.add(it.sku);
-  const dead=DATA.products.filter(p=>p.stock.lazada>0&&!sold90.has(p.sku)).sort((a,b)=>b.stock.lazada-a.stock.lazada).slice(0,15);
+  const dead=DATA.products.filter(p=>p.stock.lazada>0&&!sold90.has(p.sku)).sort((a,b)=>b.stock.lazada-a.stock.lazada).slice(0,lim('deadTable',15));
   $('#deadTable').innerHTML='<thead><tr><th>SKU</th><th>สินค้า</th><th class="num">สต็อก</th></tr></thead><tbody>'+
     (dead.length?dead.map(p=>`<tr><td class="muted">${p.sku}</td><td>${p.name}</td><td class="num">${fmt(p.stock.lazada)}</td></tr>`).join(''):'<tr><td colspan="3" class="muted" style="text-align:center;padding:14px">ไม่มี — สินค้าที่มีสต็อกขายได้หมด ✅</td></tr>')+'</tbody>';
   // 6) ซื้อคู่กันบ่อย
   const pc={};
   for(const o of valid){const sk=[...new Set(o.items.map(i=>i.name||i.sku))];
     for(let a=0;a<sk.length;a++)for(let b=a+1;b<sk.length;b++){const key=[sk[a],sk[b]].sort().join('|');pc[key]=(pc[key]||0)+1;}}
-  const pairs=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const pairs=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,lim('basketTable',10));
   $('#basketTable').innerHTML='<thead><tr><th>คู่สินค้า</th><th class="num">ซื้อคู่กัน (ครั้ง)</th></tr></thead><tbody>'+
     (pairs.length?pairs.map(([k,n])=>`<tr><td>${k.split('|').join(' + ')}</td><td class="num">${fmt(n)}</td></tr>`).join(''):'<tr><td colspan="2" class="muted" style="text-align:center;padding:14px">ลูกค้าส่วนใหญ่ซื้อทีละชิ้น</td></tr>')+'</tbody>';
 }
@@ -915,14 +918,14 @@ function renderSales(curSet,curD){
     const mo=(o.date||'').slice(0,7); if(mo){(monAov[mo]||(monAov[mo]={rev:0,n:0})).rev+=m.rev; monAov[mo].n++;}
     if(Number(o.shipping_fee||0)>0){paidShip++;}else{freeShip++;}
   }
-  const topProd=Object.entries(prodRev).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const topProd=Object.entries(prodRev).sort((a,b)=>b[1]-a[1]).slice(0,lim('catChart',10));
   renderRankList('catChart', topProd, accent);
   mk('dowChart',{type:'bar',data:{labels:DOW,datasets:[{data:dowSum.map((v,i)=>dowOcc[i]?v/dowOcc[i]:0),
     backgroundColor:DOW.map((_,i)=>i>=5?'#f59e0b':accent),borderRadius:6}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
   mk('hourChart',{type:'bar',data:{labels:[...Array(24).keys()].map(h=>h+':00'),datasets:[{data:hour,backgroundColor:accent,borderRadius:4}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:12}},y:{ticks:{precision:0}}}}});
-  const regs=Object.keys(regRev).sort((a,b)=>regRev[b]-regRev[a]).slice(0,10);
+  const regs=Object.keys(regRev).sort((a,b)=>regRev[b]-regRev[a]).slice(0,lim('regionChart',10));
   const cleanReg=r=>String(r).split('/')[0].trim();
   renderRankList('regionChart', regs.map(r=>[cleanReg(r), regRev[r]]), '#9b5bff');
   mk('statusChart',{type:'doughnut',data:{labels:['สำเร็จ','ยกเลิก','คืนสินค้า'],
@@ -1065,7 +1068,7 @@ function renderProductExtras(curSet){
   // Pareto
   const pr={};
   for(const o of valid)for(const i of o.items){ const k=i.name||i.sku; pr[k]=(pr[k]||0)+i.qty*i.price; }
-  const sorted=Object.entries(pr).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  const sorted=Object.entries(pr).sort((a,b)=>b[1]-a[1]).slice(0,lim('paretoChart',15));
   const total=Object.values(pr).reduce((a,b)=>a+b,0)||1;
   let cum=0; const cumPct=sorted.map(x=>{cum+=x[1];return +(cum/total*100).toFixed(1);});
   mk('paretoChart',{data:{labels:sorted.map(x=>x[0].length>14?x[0].slice(0,14)+'…':x[0]),
@@ -1334,7 +1337,7 @@ let chartReturn=null;
 function addExpandButtons(){
   document.querySelectorAll('.content .card').forEach(card=>{
     if(card.querySelector(':scope > .expand-btn'))return;
-    const target=card.querySelector('canvas, .ranklist, #heatmap');
+    const target=card.querySelector('canvas, .ranklist, #heatmap, table');
     if(!target||!target.id)return;
     const title=(card.querySelector('.ctitle')||{}).textContent||'กราฟ';
     const btn=document.createElement('button');
@@ -1345,8 +1348,10 @@ function addExpandButtons(){
   });
 }
 function openChart(id,title){
-  const el=document.getElementById(id); if(!el)return;
+  if(!document.getElementById(id))return;
   $('#chartModalTitle').textContent=title;
+  EXPAND_ID=id; if(DATA)render();           // วาดใหม่ให้ตัวที่ขยายโชว์ Top 100 / ทั้งหมด
+  const el=document.getElementById(id); if(!el){EXPAND_ID=null;return;}
   chartReturn={el,parent:el.parentNode,next:el.nextSibling};
   const body=$('#chartModalBody'); body.innerHTML=''; body.appendChild(el);
   $('#chartModal').style.display='flex';
@@ -1355,9 +1360,9 @@ function openChart(id,title){
 function closeChart(){
   if(chartReturn){const {el,parent,next}=chartReturn;
     if(next&&next.parentNode===parent)parent.insertBefore(el,next); else parent.appendChild(el);
-    if(charts[el.id])requestAnimationFrame(()=>{try{charts[el.id].resize();}catch(e){}});
     chartReturn=null;}
   $('#chartModal').style.display='none';
+  EXPAND_ID=null; if(DATA)render();          // กลับมาแสดงตามปกติ
 }
 $('#chartModalClose').onclick=closeChart;
 $('#chartModal').onclick=e=>{if(e.target.id==='chartModal')closeChart();};
