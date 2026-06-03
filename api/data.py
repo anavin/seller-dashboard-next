@@ -42,6 +42,28 @@ def _sb_all(table, select="*", extra=""):
     return out
 
 
+def _pay_group(p):
+    """จัดกลุ่มวิธีชำระเงิน (ละเอียด -> หมวดใหญ่อ่านง่าย) ทำที่หลังบ้านก่อนส่งให้ dashboard"""
+    s = str(p or "").upper().strip()
+    if not s:
+        return "ไม่ระบุ"
+    if "COD" in s:
+        return "เก็บปลายทาง (COD)"
+    if "PROMPTPAY" in s:
+        return "PromptPay"
+    if "VIRTUAL_ACCOUNT" in s or "_BANK" in s or "BANK_VA" in s or "BANK_ONLINE" in s:
+        return "โอนผ่านธนาคาร"
+    if "CARD" in s or "PAY_LATER" in s or "CREDIT" in s or "DEBIT" in s or "INSTALLMENT" in s:
+        return "บัตร/ผ่อน"
+    if "TMN" in s or "WALLET" in s or "LINE_PAY" in s or "RABBIT" in s or "PAYMENT_ACCOUNT" in s:
+        return "e-Wallet"
+    if "OTC" in s or "SEVENELEVEN" in s or "COUNTER" in s:
+        return "เคาน์เตอร์/ร้านสะดวกซื้อ"
+    if "ZERO" in s or "FREE" in s:
+        return "ฟรี/0 บาท"
+    return "อื่นๆ"
+
+
 def build_from_db():
     """อ่านข้อมูลจาก Supabase แล้วประกอบเป็น JSON เดียวกับที่ dashboard ใช้ (เร็ว)"""
     orders = _sb_all("lz_orders")
@@ -64,7 +86,7 @@ def build_from_db():
         "shipping_fee": float(o.get("shipping_fee", 0) or 0),
         "platform_fee": float(o.get("platform_fee", 0) or 0),
         "buyer": o.get("buyer_key", "") or "",
-        "payment": o.get("payment_method", "") or "",
+        "payment": _pay_group(o.get("payment_method", "")),
         "items": by_order.get(o["order_id"], []),
     } for o in orders]
 

@@ -505,8 +505,10 @@ function applyVisibility(){
 
 // ---------- aggregation ----------
 function matchCat(it){return state.category==='all'||it.category===state.category;}
-// จัดกลุ่มวิธีชำระเงิน (ละเอียด -> หมวดใหญ่ที่อ่านง่าย)
+// จัดกลุ่มวิธีชำระเงิน (สำรองฝั่งหน้าบ้าน — ปกติหลังบ้านจัดกลุ่มมาแล้ว)
+const PAY_GROUPS=['เก็บปลายทาง (COD)','PromptPay','โอนผ่านธนาคาร','บัตร/ผ่อน','e-Wallet','เคาน์เตอร์/ร้านสะดวกซื้อ','ฟรี/0 บาท','ไม่ระบุ','อื่นๆ'];
 function payGroup(p){
+  if(PAY_GROUPS.includes(p)) return p;   // หลังบ้านจัดกลุ่มมาแล้ว ใช้ค่าเดิม
   const s=(p||'').toUpperCase().trim();
   if(!s) return 'ไม่ระบุ';
   if(s.includes('COD')) return 'เก็บปลายทาง (COD)';
