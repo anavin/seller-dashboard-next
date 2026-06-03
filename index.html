@@ -354,6 +354,14 @@ const DOW=['จ','อ','พ','พฤ','ศ','ส','อา']; // Monday-first
 const fmt=n=>Math.round(n).toLocaleString('th-TH');
 const fmt2=n=>Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtK=n=>Math.abs(n)>=1e6?(n/1e6).toFixed(1)+'M':Math.abs(n)>=1e3?(n/1e3).toFixed(1)+'k':Math.round(n);
+const THMON=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+// จัดรูปแบบป้ายแกนวันที่ให้อ่านง่าย: ช่วงสั้น=วัน/เดือน, ช่วงยาว=เดือน ปีพ.ศ.(2หลัก)
+function dateTick(iso,total){
+  if(!iso)return ''; const p=(''+iso).split('-'); if(p.length<3)return iso;
+  const be=String((+p[0]+543)%100).padStart(2,'0');
+  if(total<=45) return (+p[2])+' '+THMON[+p[1]-1];     // เช่น 15 เม.ย.
+  return THMON[+p[1]-1]+' '+be;                          // เช่น เม.ย. 66
+}
 const $=s=>document.querySelector(s);
 let DATA=null, charts={};
 const state={win:30, platforms:new Set(['tiktok','shopee','lazada']), category:'all', mode:'preset', from:'', to:'', tab:'overview'};
@@ -552,13 +560,17 @@ function render(){
   spark('spkOrd',dOrders,'#10b981');
   spark('spkNet',dailyTotal.map(v=>v*(margin/100)),'#f59e0b');
 
-  mk('trendChart',{type:'line',data:{labels:curD.map(d=>d.slice(5)),
+  const trendN=curD.length;
+  mk('trendChart',{type:'line',data:{labels:curD,
     datasets:DATA.meta.platforms.filter(p=>state.platforms.has(p)).map(p=>({
       label:PLT[p].name,data:daily[p],borderColor:PLT[p].c,backgroundColor:PLT[p].c+'22',
       fill:true,tension:.35,pointRadius:0,borderWidth:2}))},
     options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
-      scales:{y:{stacked:true,ticks:{callback:fmtK}},x:{stacked:true,ticks:{maxTicksLimit:12}}}}});
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}},
+        tooltip:{callbacks:{title:it=>it[0].label}}},
+      scales:{y:{stacked:true,ticks:{callback:fmtK}},
+        x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,
+          callback:function(v){return dateTick(this.getLabelForValue(v),trendN);}}}}}});
 
   const pr=DATA.meta.platforms.filter(p=>state.platforms.has(p));
   mk('platChart',{type:'doughnut',data:{labels:pr.map(p=>PLT[p].name),
@@ -587,12 +599,15 @@ function renderTrends(curD){
   for(const o of valid){const i=idx[o.date]; if(i===undefined)continue; dRev[i]+=orderMatch(o).rev; dOrd[i]++;}
   let run=0; const cum=dRev.map(v=>run+=v);
   const aov=dRev.map((v,i)=>dOrd[i]?v/dOrd[i]:0);
-  mk('cumChart',{data:{labels:curD.map(d=>d.slice(5)),datasets:[
+  const cumN=curD.length;
+  mk('cumChart',{data:{labels:curD,datasets:[
     {type:'line',label:'ยอดสะสม',data:cum,borderColor:cssvar('--accent'),backgroundColor:cssvar('--accent')+'22',fill:true,tension:.3,pointRadius:0,yAxisID:'y'},
     {type:'line',label:'AOV/วัน',data:aov,borderColor:'#f59e0b',pointRadius:0,tension:.3,borderDash:[4,3],yAxisID:'y1'}]},
     options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
-      scales:{x:{ticks:{maxTicksLimit:10}},y:{ticks:{callback:fmtK}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:fmtK}}}}});
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}},tooltip:{callbacks:{title:it=>it[0].label}}},
+      scales:{x:{ticks:{maxTicksLimit:10,autoSkip:true,maxRotation:0,minRotation:0,
+        callback:function(v){return dateTick(this.getLabelForValue(v),cumN);}}},
+        y:{ticks:{callback:fmtK}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:fmtK}}}}});
 }
 function renderHeatmap(curSet){
   const grid=Array.from({length:7},()=>Array(24).fill(0));
