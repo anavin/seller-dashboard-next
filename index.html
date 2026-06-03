@@ -457,7 +457,14 @@ function applyVisibility(){
 // ---------- aggregation ----------
 function matchCat(it){return state.category==='all'||it.category===state.category;}
 // แยกขนาด (ml) จากชื่อ/SKU เช่น "30ml", "50 ml" -> "30ml"; ถ้าไม่เจอ -> "อื่นๆ"
-function mlOf(it){const s=((it.name||'')+' '+(it.sku||'')).match(/(\d{1,4})\s*ml/i);return s?(s[1]+'ml'):'อื่นๆ';}
+const ML_FIX={54:50};   // แก้ค่าที่ผิด: 54ml -> 50ml
+function mlOf(it){
+  const m=((it.name||'')+' '+(it.sku||'')).match(/(\d{1,4})\s*ml/i);
+  if(!m)return 'อื่นๆ';
+  let n=parseInt(m[1],10);          // ตัดเลข 0 นำหน้า: 04 -> 4
+  if(ML_FIX[n]!==undefined)n=ML_FIX[n];
+  return n+'ml';
+}
 function orderG(o){return o.items.reduce((s,i)=>s+i.qty*i.price,0);}
 function orderMatch(o){let rev=0,units=0,cogs=0;
   for(const i of o.items){if(matchCat(i)){rev+=i.qty*i.price;units+=i.qty;cogs+=i.qty*i.cost;}}
