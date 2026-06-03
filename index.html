@@ -241,8 +241,8 @@
         <div class="card c-7"><div class="ctitle">ออเดอร์ตามช่วงเวลาของวัน</div><div class="csub">ชั่วโมงที่ลูกค้าสั่งซื้อมากที่สุด</div><div class="chart-wrap sm"><canvas id="hourChart"></canvas></div></div>
         <div class="card c-5"><div class="ctitle">ยอดขายตามพื้นที่</div><div class="csub">Top 10 เขต/จังหวัดที่ขายดี</div><div class="chart-wrap sm" style="overflow:auto"><div class="ranklist" id="regionChart"></div></div></div>
         <div class="card c-4"><div class="ctitle">สถานะออเดอร์</div><div class="csub">สำเร็จ vs ยกเลิก/คืน</div><div class="chart-wrap sm"><canvas id="statusChart"></canvas></div></div>
-        <div class="card c-4"><div class="ctitle">ลูกค้าใหม่ vs ลูกค้าเก่า</div><div class="csub">ตามรายได้</div><div class="chart-wrap sm"><canvas id="custChart"></canvas></div></div>
-        <div class="card c-4"><div class="ctitle">AOV รายแพลตฟอร์ม</div><div class="csub">บาท/ออเดอร์</div><div class="chart-wrap sm"><canvas id="aovChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">ค่าจัดส่ง: ฟรี vs เสียเงิน</div><div class="csub">จำนวนออเดอร์</div><div class="chart-wrap sm"><canvas id="custChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">AOV รายเดือน</div><div class="csub">บาท/ออเดอร์</div><div class="chart-wrap sm"><canvas id="aovChart"></canvas></div></div>
         <div class="card c-12"><div class="ctitle">🔥 ช่วงเวลาทอง — วัน × ชั่วโมง</div><div class="csub">สีเข้ม = ออเดอร์เยอะ (เลื่อนเมาส์ดูจำนวน)</div><div id="heatmap" style="overflow:auto;margin-top:8px"></div></div>
         <div class="card c-6"><div class="ctitle">จำนวนชิ้นต่อออเดอร์</div><div class="csub">ออเดอร์ส่วนใหญ่ซื้อกี่ชิ้น</div><div class="chart-wrap sm"><canvas id="itemDistChart"></canvas></div></div>
         <div class="card c-6"><div class="ctitle">การกระจายมูลค่าออเดอร์</div><div class="csub">ออเดอร์ส่วนใหญ่มูลค่าเท่าไหร่</div><div class="chart-wrap sm"><canvas id="valDistChart"></canvas></div></div>
@@ -598,6 +598,7 @@ function renderSales(curSet,curD){
   const regRev={}, stat={completed:0,cancelled:0,returned:0}, cust={new:0,returning:0};
   const dowSum=Array(7).fill(0), hour=Array(24).fill(0);
   const aovP={}; DATA.meta.platforms.forEach(p=>aovP[p]={rev:0,n:0});
+  const monAov={}; let freeShip=0, paidShip=0;
   const dowOcc=Array(7).fill(0); curD.forEach(d=>{dowOcc[(new Date(d+'T00:00:00').getDay()+6)%7]++;});
   for(const o of ordersIn(curSet)){
     const cancelled=(o.status==='cancelled'||o.status==='returned');
@@ -611,6 +612,8 @@ function renderSales(curSet,curD){
     dowSum[(new Date(o.date+'T00:00:00').getDay()+6)%7]+=m.rev;
     hour[o.hour]+=1;
     aovP[o.platform].rev+=m.rev; aovP[o.platform].n++;
+    const mo=(o.date||'').slice(0,7); if(mo){(monAov[mo]||(monAov[mo]={rev:0,n:0})).rev+=m.rev; monAov[mo].n++;}
+    if(Number(o.shipping_fee||0)>0){paidShip++;}else{freeShip++;}
   }
   const topProd=Object.entries(prodRev).sort((a,b)=>b[1]-a[1]).slice(0,10);
   renderRankList('catChart', topProd, accent);
@@ -625,17 +628,17 @@ function renderSales(curSet,curD){
   mk('statusChart',{type:'doughnut',data:{labels:['สำเร็จ','ยกเลิก','คืนสินค้า'],
     datasets:[{data:[stat.completed,stat.cancelled,stat.returned],backgroundColor:['#10b981','#ef4444','#f59e0b'],borderWidth:0}]},
     options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
-  mk('custChart',{type:'doughnut',data:{labels:['ลูกค้าใหม่','ลูกค้าเก่า'],
-    datasets:[{data:[cust.new,cust.returning],backgroundColor:['#5b6cff','#10b981'],borderWidth:0}]},
+  mk('custChart',{type:'doughnut',data:{labels:['ส่งฟรี','เสียค่าส่ง'],
+    datasets:[{data:[freeShip,paidShip],backgroundColor:['#10b981','#f59e0b'],borderWidth:0}]},
     options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
-  const ap=DATA.meta.platforms.filter(p=>state.platforms.has(p));
-  mk('aovChart',{type:'bar',data:{labels:ap.map(p=>PLT[p].name),
-    datasets:[{data:ap.map(p=>aovP[p].n?aovP[p].rev/aovP[p].n:0),backgroundColor:ap.map(p=>PLT[p].c),borderRadius:6}]},
+  const moKeys=Object.keys(monAov).sort();
+  mk('aovChart',{type:'bar',data:{labels:moKeys,
+    datasets:[{data:moKeys.map(k=>monAov[k].n?monAov[k].rev/monAov[k].n:0),backgroundColor:accent,borderRadius:6}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
   // ซ่อนการ์ดที่ไม่มีข้อมูลจริง
   toggleCard('catChart', topProd.length>0);
   toggleCard('regionChart', regs.length>0);
-  toggleCard('custChart', cust.new>0 && cust.returning>0);
+  toggleCard('custChart', (freeShip+paidShip)>0);
 }
 
 let prodCache=[], prodSort={key:'revenue',dir:-1};
