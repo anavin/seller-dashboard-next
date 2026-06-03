@@ -290,6 +290,10 @@
         <div class="card c-4"><div class="ctitle">ยอดขายตามหมวดหมู่</div><div class="csub">สัดส่วนรายได้</div><div class="chart-wrap sm"><canvas id="prodCatChart"></canvas></div></div>
         <div class="card c-8"><div class="ctitle">Pareto สินค้า (กฎ 20/80)</div><div class="csub">สินค้าไม่กี่ตัวทำรายได้ส่วนใหญ่ — เส้นคือยอดสะสม %</div><div class="chart-wrap sm"><canvas id="paretoChart"></canvas></div></div>
       </div>
+      <div class="grid charts" style="margin-bottom:14px">
+        <div class="card c-5"><div class="ctitle">ยอดขายตามขนาด (ml)</div><div class="csub">สัดส่วนรายได้แยกตามขนาดขวด</div><div class="chart-wrap sm"><canvas id="mlChart"></canvas></div></div>
+        <div class="card c-7"><div class="ctitle">จำนวนชิ้นที่ขายตามขนาด (ml)</div><div class="csub">ขนาดไหนขายดีสุด</div><div class="chart-wrap sm"><canvas id="mlUnitsChart"></canvas></div></div>
+      </div>
       <div class="card">
         <div class="tbl-tools">
           <input class="search" id="prodSearch" placeholder="🔍 ค้นหา SKU หรือชื่อสินค้า…">
@@ -434,6 +438,8 @@ function applyVisibility(){
 
 // ---------- aggregation ----------
 function matchCat(it){return state.category==='all'||it.category===state.category;}
+// แยกขนาด (ml) จากชื่อ/SKU เช่น "30ml", "50 ml" -> "30ml"; ถ้าไม่เจอ -> "อื่นๆ"
+function mlOf(it){const s=((it.name||'')+' '+(it.sku||'')).match(/(\d{1,4})\s*ml/i);return s?(s[1]+'ml'):'อื่นๆ';}
 function orderG(o){return o.items.reduce((s,i)=>s+i.qty*i.price,0);}
 function orderMatch(o){let rev=0,units=0,cogs=0;
   for(const i of o.items){if(matchCat(i)){rev+=i.qty*i.price;units+=i.qty;cogs+=i.qty*i.cost;}}
@@ -948,6 +954,17 @@ function renderProductExtras(curSet){
       scales:{x:{ticks:{maxRotation:60,minRotation:45,font:{size:9}}},y:{ticks:{callback:fmtK}},
         y1:{position:'right',min:0,max:100,grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}}}});
   toggleCard('paretoChart', sorted.length>0);
+  // แยกตามขนาด (ml) — ดึงจากชื่อสินค้า/SKU
+  const mlRev={}, mlUnit={};
+  for(const o of valid)for(const i of o.items){ const z=mlOf(i);
+    mlRev[z]=(mlRev[z]||0)+i.qty*i.price; mlUnit[z]=(mlUnit[z]||0)+i.qty; }
+  const zk=Object.keys(mlRev).sort((a,b)=>(parseInt(a)||9e9)-(parseInt(b)||9e9));
+  const zcol=zk.map((_,i)=>palette[i%palette.length]);
+  if(zk.length) mk('mlChart',{type:'doughnut',data:{labels:zk,datasets:[{data:zk.map(z=>mlRev[z]),backgroundColor:zcol,borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  if(zk.length) mk('mlUnitsChart',{type:'bar',data:{labels:zk,datasets:[{data:zk.map(z=>mlUnit[z]),backgroundColor:zcol,borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{precision:0}}}}});
+  toggleCard('mlChart', zk.length>0); toggleCard('mlUnitsChart', zk.length>0);
 }
 
 function renderInventory(curSet, windowDays){
@@ -1080,6 +1097,8 @@ const CHART_HELP=[
   ['จำนวนชิ้นต่อออเดอร์','ออเดอร์ส่วนใหญ่ซื้อกี่ชิ้นต่อบิล'],
   ['การกระจายมูลค่าออเดอร์','ออเดอร์ส่วนใหญ่มีมูลค่าอยู่ในช่วงราคาไหน'],
   ['ยอดขายตามหมวดหมู่','สัดส่วนรายได้ของแต่ละหมวดสินค้า'],
+  ['ยอดขายตามขนาด','แยกตามขนาดขวด (ml) ที่อ่านจากชื่อสินค้า — ขนาดไหนทำรายได้มากสุด'],
+  ['จำนวนชิ้นที่ขายตามขนาด','จำนวนชิ้นที่ขายแยกตามขนาดขวด (ml) — ขนาดไหนขายดีสุด'],
   ['Pareto','กฎ 20/80: สินค้าส่วนน้อยมักทำรายได้ส่วนใหญ่ · เส้น = ยอดสะสม % ถ้าพุ่งถึง 80% เร็ว = พึ่งสินค้าไม่กี่ตัว'],
   ['โครงสร้างกำไร','Waterfall: ไล่จากยอดขาย แล้วหักต้นทุน-ค่าธรรมเนียม-ค่าโฆษณา ทีละขั้นจนเหลือกำไรสุทธิ'],
   ['กำไรขั้นต้นตามหมวด','รายได้ − ต้นทุนสินค้า (COGS = Cost of Goods Sold) แยกตามหมวด'],
