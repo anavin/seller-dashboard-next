@@ -246,6 +246,7 @@
       <div id="calPop" class="cal-pop"></div>
       <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
       <button id="backfillBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงข้อมูลย้อนหลังให้ครบทุกเดือน">🔄 ดึงย้อนหลัง</button>
+      <button id="financeBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงข้อมูลการเงิน (ยอดโอน) ย้อนหลังทั้งหมด">💵 ดึงการเงิน</button>
     </div>
   </div>
 
@@ -1139,6 +1140,27 @@ async function backfillAll(){
   setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1000);
 }
 $('#backfillBtn').onclick=backfillAll;
+// ---------- ดึงการเงิน: วนเรียก finance=1 จนกว่า more=false ----------
+async function financeAll(){
+  const pw=(()=>{try{return sessionStorage.getItem('dpw');}catch(e){return null;}})();
+  if(!pw){alert('กรุณาเข้าสู่ระบบใหม่ก่อน');return;}
+  if(!confirm('ดึงข้อมูลการเงิน (ยอดโอนจริง) ย้อนหลังทั้งหมด?\nใช้เวลาประมาณ 1-2 นาที (ห้ามปิดหน้านี้)'))return;
+  const btn=$('#financeBtn'); btn.disabled=true;
+  let total=0, round=0, more=true;
+  while(more && round<25){
+    round++; btn.textContent=`⏳ ดึงการเงิน รอบ ${round}…`;
+    try{
+      const r=await fetch(`/api/sync?pw=${encodeURIComponent(pw)}&finance=1`);
+      const j=await r.json();
+      if(j.error){btn.textContent='⚠️ '+j.error; btn.disabled=false; return;}
+      total+=j.statements_added||0; more=!!j.more;
+    }catch(e){more=false;}
+  }
+  btn.textContent=`✓ การเงิน +${total.toLocaleString()} ใบ`;
+  btn.disabled=false;
+  setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1000);
+}
+$('#financeBtn').onclick=financeAll;
 $('#kpiGrid').onclick=e=>{const c=e.target.closest('[data-kpi]'); if(c)openKpiDetail(c.dataset.kpi);};
 $('#kpiModalClose').onclick=()=>$('#kpiModal').style.display='none';
 $('#kpiModal').onclick=e=>{if(e.target.id==='kpiModal')$('#kpiModal').style.display='none';};

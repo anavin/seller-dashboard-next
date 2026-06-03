@@ -251,7 +251,7 @@ def run_finance_sync(since="2023-01-01"):
     access, new_rt = _refresh(app_key, app_secret, rt)
     start = datetime.date.fromisoformat(since)
     end = now.date()
-    budget, filled, skipped, more, total = 6, [], 0, False, 0
+    budget, filled, skipped, more, total = 8, [], 0, False, 0
     for ws, we in _month_windows(start, end):
         if budget <= 0:
             more = True
