@@ -293,21 +293,30 @@ def review_sample():
         if len(batch) < 50:
             break
         offset += 50
-    checked = 0
-    for i in range(0, len(item_ids), 20):
-        chunk = item_ids[i:i + 20]
-        checked += len(chunk)
+    now = datetime.datetime.now().astimezone()
+    ms_a = int((now - datetime.timedelta(days=1700)).timestamp() * 1000)
+    ms_b = int(now.timestamp() * 1000)
+    checked, last_err = 0, None
+    for iid in item_ids[:40]:
+        checked += 1
         try:
-            d = _call(LAZADA_BASE, "/review/seller/list/v2", app_key, app_secret, access,
-                      {"id_list": json.dumps(chunk)})
-        except Exception:
+            d = _call(LAZADA_BASE, "/review/seller/history/list", app_key, app_secret, access,
+                      {"item_id": iid, "start_time": ms_a, "end_time": ms_b, "current": 1, "page_size": 20})
+        except Exception as e:
+            last_err = str(e)
             continue
-        rlist = (d.get("data") or {}).get("review_list") or []
+        data = d.get("data")
+        rlist = []
+        if isinstance(data, dict):
+            rlist = data.get("review_list") or data.get("reviews") or data.get("list") or []
+        elif isinstance(data, list):
+            rlist = data
         if rlist:
-            return {"items_checked": checked, "total_items": len(item_ids),
+            return {"items_checked": checked, "endpoint": "history",
+                    "data_keys": sorted(data.keys()) if isinstance(data, dict) else "list",
                     "first_review_raw": rlist[0], "review_keys": sorted(rlist[0].keys())}
-    return {"items_checked": checked, "total_items": len(item_ids),
-            "first_review_raw": None, "note": "ยังไม่เจอ item ที่มีรีวิว (อาจต้องเช็ก item เยอะกว่านี้ หรือร้านยังรีวิวน้อย)"}
+    return {"items_checked": checked, "total_items": len(item_ids), "first_review_raw": None,
+            "last_error": last_err, "note": "ยังไม่เจอรีวิวใน 40 item แรกผ่าน history — ดู last_error ว่าติด param ไหน"}
 
 
 def _refresh(app_key, app_secret, refresh_token):
