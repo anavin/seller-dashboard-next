@@ -204,6 +204,7 @@
     <a data-sec="profit"><span class="ic">💰</span> กำไร</a>
     <a data-sec="ads"><span class="ic">🎯</span> โฆษณา</a>
     <a data-sec="inventory"><span class="ic">🏷️</span> สต็อก</a>
+    <a data-sec="finance"><span class="ic">💵</span> การเงิน</a>
     <a data-sec="insight"><span class="ic">🔍</span> วิเคราะห์เชิงลึก</a>
   </nav>
   <div class="side-foot">
@@ -333,6 +334,17 @@
       <div class="card" style="margin-top:14px">
         <div class="ctitle">⚠️ สินค้าใกล้หมด / หมดสต็อก (รวมทุกแพลตฟอร์ม &lt; 30 ชิ้น)</div>
         <div class="tbl-scroll" style="margin-top:10px"><table id="lowTable"></table></div>
+      </div>
+    </section>
+
+    <!-- FINANCE / การเงิน — ยอดโอนจริงจาก Lazada Finance -->
+    <section class="section" id="sec-finance">
+      <h2><span class="bar"></span>การเงิน — ยอดโอนจริง <span class="hint">จาก Lazada Finance · ใช้ข้อมูลทั้งหมด</span></h2>
+      <div class="grid kpis" id="finKpi"></div>
+      <div class="grid charts" style="margin-top:14px">
+        <div class="card c-8"><div class="ctitle">ยอดขาย · ค่าธรรมเนียม · ยอดโอนสุทธิ</div><div class="csub">รายเดือน</div><div class="chart-wrap"><canvas id="finChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">อัตราค่าธรรมเนียม</div><div class="csub">% ของยอดขาย รายเดือน</div><div class="chart-wrap"><canvas id="feeRateChart"></canvas></div></div>
+        <div class="card c-12"><div class="ctitle">ใบสรุปยอดโอนล่าสุด</div><div class="csub">30 ใบล่าสุด</div><div class="tbl-scroll" style="margin-top:10px"><table id="finTable"></table></div></div>
       </div>
     </section>
 
@@ -534,6 +546,7 @@ function render(){
   // กำหนดว่าหมวดไหนมีข้อมูล แล้วโชว์เฉพาะแท็บที่เลือก (ก่อนวาดกราฟ เพื่อให้กราฟไซซ์ถูก)
   markEmpty('sec-ads', !(ad.spend>0||ad.rev>0));
   markEmpty('sec-profit', !(s.cogs>0||s.fee>0||ad.spend>0));
+  markEmpty('sec-finance', !(DATA.finance&&DATA.finance.length));
   applyVisibility();
 
   let syncStr='';
@@ -614,6 +627,37 @@ function render(){
   renderHeatmap(curSet);
   renderDist(curSet);
   renderInsight();
+  renderFinance();
+}
+// ---------- การเงิน: ยอดโอนจริงจาก Lazada (ใช้ข้อมูลทั้งหมด) ----------
+function renderFinance(){
+  const fin=DATA.finance||[]; if(!fin.length)return;
+  const accent=cssvar('--accent');
+  const m={};
+  for(const s of fin){const k=(s.date||'').slice(0,7); if(!k)continue;
+    (m[k]||(m[k]={rev:0,fee:0,pay:0})); m[k].rev+=s.revenue; m[k].fee+=s.fees; m[k].pay+=s.payout;}
+  const mks=Object.keys(m).sort();
+  const tRev=fin.reduce((a,s)=>a+s.revenue,0),tFee=fin.reduce((a,s)=>a+s.fees,0),tPay=fin.reduce((a,s)=>a+s.payout,0);
+  const feeRate=tRev?Math.abs(tFee)/tRev*100:0;
+  $('#finKpi').innerHTML=
+    kpiCard('ยอดขายที่ settle แล้ว',fmt(tRev)+' ฿')+
+    kpiCard('ค่าธรรมเนียมรวม',fmt(tFee)+' ฿')+
+    kpiCard('ยอดโอนสุทธิเข้าบัญชี',fmt(tPay)+' ฿')+
+    kpiCard('อัตราค่าธรรมเนียมเฉลี่ย',feeRate.toFixed(1)+'%');
+  const xtick={maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}};
+  mk('finChart',{data:{labels:mks,datasets:[
+    {type:'bar',label:'ยอดขาย',data:mks.map(k=>m[k].rev),backgroundColor:accent,borderRadius:5},
+    {type:'bar',label:'ค่าธรรมเนียม',data:mks.map(k=>Math.abs(m[k].fee)),backgroundColor:'#ef4444',borderRadius:5},
+    {type:'line',label:'ยอดโอนสุทธิ',data:mks.map(k=>m[k].pay),borderColor:'#10b981',backgroundColor:'#10b98122',tension:.3,pointRadius:0,borderWidth:2}]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{x:{ticks:xtick},y:{ticks:{callback:fmtK}}}}});
+  mk('feeRateChart',{type:'line',data:{labels:mks,datasets:[{label:'%',data:mks.map(k=>m[k].rev?Math.abs(m[k].fee)/m[k].rev*100:0),
+    borderColor:'#f59e0b',backgroundColor:'#f59e0b22',fill:true,tension:.3,pointRadius:0,borderWidth:2}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:xtick},y:{ticks:{callback:v=>v+'%'}}}}});
+  const recent=[...fin].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,30);
+  $('#finTable').innerHTML='<thead><tr><th>ใบโอน</th><th>วันที่</th><th class="num">ยอดขาย</th><th class="num">ค่าธรรมเนียม</th><th class="num">โอนสุทธิ</th></tr></thead><tbody>'+
+    recent.map(s=>`<tr><td class="muted">${s.statement}</td><td>${s.date}</td><td class="num">${fmt(s.revenue)}</td><td class="num neg">${fmt(s.fees)}</td><td class="num pos">${fmt(s.payout)}</td></tr>`).join('')+'</tbody>';
 }
 // ---------- วิเคราะห์เชิงลึก (ใช้ข้อมูลทั้งหมด ไม่ขึ้นกับฟิลเตอร์วันที่) ----------
 function renderInsight(){
@@ -1049,6 +1093,9 @@ const CHART_HELP=[
   ['สินค้าขาตก','สินค้าที่ยอดขายลดลงมากสุด (90 วันล่าสุด เทียบ 90 วันก่อน) ควรกระตุ้นหรือลดสต็อก'],
   ['Dead stock','สินค้าที่ยังมีสต็อกแต่ไม่มียอดขายเลยใน 90 วันล่าสุด — เงินจม ควรจัดโปรระบาย'],
   ['ซื้อคู่กันบ่อย','คู่สินค้าที่ลูกค้ามักซื้อพร้อมกันในออเดอร์เดียว ไว้จัดเซ็ต/บันเดิลเพิ่มยอดต่อบิล'],
+  ['ยอดโอนสุทธิ','ยอดขายที่ settle แล้ว (น้ำเงิน), ค่าธรรมเนียมที่ Lazada หัก (แดง), และยอดที่โอนเข้าบัญชีจริง (เขียว) รายเดือน — ตัวเลขจริงจาก Lazada Finance'],
+  ['อัตราค่าธรรมเนียม','สัดส่วนค่าธรรมเนียมที่ถูกหัก เทียบยอดขาย เป็น % รายเดือน ยิ่งต่ำยิ่งดี'],
+  ['ใบสรุปยอดโอน','รายการ settlement แต่ละใบจาก Lazada — ยอดขาย ค่าธรรมเนียม และยอดโอนสุทธิเข้าบัญชี'],
 ];
 function addChartHelp(){
   document.querySelectorAll('.content .ctitle').forEach(t=>{

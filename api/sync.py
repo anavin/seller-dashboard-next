@@ -16,6 +16,7 @@ import hmac
 import hashlib
 import datetime
 import calendar
+import re
 import urllib.parse
 
 import requests
@@ -197,6 +198,62 @@ def _month_windows(start, end):
     return out
 
 
+def _num(v):
+    """ดึงตัวเลขจาก string เช่น '1100.44 THB' หรือ '-245.07' -> float"""
+    if v is None:
+        return 0.0
+    m = re.search(r"-?\d[\d,]*(\.\d+)?", str(v))
+    return float(m.group().replace(",", "")) if m else 0.0
+
+
+def sync_finance(access, app_key, app_secret, created_after, created_before):
+    """ดึงใบสรุปยอดโอน (payout statement) -> upsert ลง lz_finance"""
+    rows, offset = [], 0
+    while True:
+        d = _lz("/finance/payout/status/get", app_key, app_secret, access,
+                {"created_after": created_after, "created_before": created_before,
+                 "limit": 100, "offset": offset})
+        batch = d.get("data") or []
+        if isinstance(batch, dict):
+            batch = batch.get("list") or batch.get("statements") or batch.get("rows") or []
+        if not batch:
+            break
+        for s in batch:
+            sn = s.get("statement_number")
+            if not sn:
+                continue
+            rows.append({
+                "statement_number": sn,
+                "date": (s.get("created_at") or "")[:10] or None,
+                "item_revenue": _num(s.get("item_revenue")),
+                "fees_total": _num(s.get("fees_total")),
+                "refunds": _num(s.get("refunds")),
+                "payout": _num(s.get("payout")),
+                "created_at_lz": s.get("created_at", ""),
+            })
+        if len(batch) < 100:
+            break
+        offset += 100
+        if offset >= 20000:
+            break
+    if rows:
+        sb_upsert("lz_finance", rows, "statement_number")
+    return len(rows)
+
+
+def run_finance_sync(since="2023-01-01"):
+    """ดึงข้อมูลการเงินทั้งหมดตั้งแต่ since ถึงปัจจุบัน — สั่งด้วย /api/sync?finance=1"""
+    app_key = os.environ["LZ_APP_KEY"]
+    app_secret = os.environ["LZ_APP_SECRET"]
+    now = datetime.datetime.now().astimezone()
+    state = sb_get("lz_sync", "id=eq.1&select=refresh_token")
+    rt = (state[0].get("refresh_token") if state else None) or os.environ["LZ_REFRESH_TOKEN"]
+    access, new_rt = _refresh(app_key, app_secret, rt)
+    n = sync_finance(access, app_key, app_secret, since, now.date().isoformat())
+    sb_upsert("lz_sync", [{"id": 1, "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
+    return {"ok": True, "mode": "finance", "statements": n, "since": since}
+
+
 # ---------- sync ----------
 def run_sync(force_days=None, from_date=None, to_date=None, fill_all=False, since_date=None):
     app_key = os.environ["LZ_APP_KEY"]
@@ -322,10 +379,17 @@ def run_sync(force_days=None, from_date=None, to_date=None, fill_all=False, sinc
     _write_orders(order_rows, item_rows)
     if prod_rows:
         sb_upsert("lz_products", list(prod_rows.values()), "sku")
+    # อัปเดตการเงิน (ใบโอนล่าสุด ~35 วัน) ให้สดทุกวัน
+    try:
+        fin = sync_finance(access, app_key, app_secret,
+                           (now - datetime.timedelta(days=35)).date().isoformat(), now.date().isoformat())
+    except Exception:
+        fin = 0
     sb_upsert("lz_sync", [{"id": 1, "last_sync_time": now.isoformat(),
                            "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
     return {"ok": True, "synced_orders": len(order_rows), "items": len(item_rows),
-            "products": len(prod_rows), "window": "update_after %s" % since_iso, "backfill": False}
+            "products": len(prod_rows), "finance_statements": fin,
+            "window": "update_after %s" % since_iso, "backfill": False}
 
 
 class handler(BaseHTTPRequestHandler):
@@ -345,7 +409,12 @@ class handler(BaseHTTPRequestHandler):
         to_date = qs.get("to", [None])[0]
         fill_all = qs.get("backfill", [""])[0] == "all"
         since_date = qs.get("since", [None])[0]
+        finance = qs.get("finance", [None])[0]
         try:
+            if finance:
+                since = finance if finance not in ("1", "all", "true", "yes") else "2023-01-01"
+                self._send(200, run_finance_sync(since))
+                return
             self._send(200, run_sync(force_days=force_days, from_date=from_date, to_date=to_date,
                                      fill_all=fill_all, since_date=since_date))
         except Exception as e:

@@ -47,5 +47,17 @@ alter table lz_sync add column if not exists refresh_token text;
 insert into lz_sync (id, last_sync_time) values (1, null)
   on conflict (id) do nothing;
 
+-- การเงิน: ใบสรุปยอดโอน (payout statement) จาก Lazada Finance API
+create table if not exists lz_finance (
+  statement_number text primary key,
+  date             date,
+  item_revenue     numeric default 0,
+  fees_total       numeric default 0,
+  refunds          numeric default 0,
+  payout           numeric default 0,
+  created_at_lz    text
+);
+
 create index if not exists idx_items_order on lz_order_items(order_id);
 create index if not exists idx_orders_date on lz_orders(date);
+create index if not exists idx_finance_date on lz_finance(date);

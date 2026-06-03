@@ -81,13 +81,27 @@ def build_from_db():
         last_sync = sy[0].get("last_sync_time") if sy else None
     except Exception:
         last_sync = None
+    # การเงิน: ใบสรุปยอดโอน (ถ้ามี)
+    finance = []
+    try:
+        for r in _sb_all("lz_finance"):
+            finance.append({
+                "statement": r.get("statement_number", ""),
+                "date": str(r.get("date", ""))[:10],
+                "revenue": float(r.get("item_revenue", 0) or 0),
+                "fees": float(r.get("fees_total", 0) or 0),
+                "refunds": float(r.get("refunds", 0) or 0),
+                "payout": float(r.get("payout", 0) or 0),
+            })
+    except Exception:
+        finance = []
     return {
         "meta": {"currency": "THB",
                  "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
                  "start_date": dates[0] if dates else "", "end_date": dates[-1] if dates else "",
                  "days": len(dates), "source": "supabase", "last_sync": last_sync,
                  "platforms": ["tiktok", "shopee", "lazada"], "categories": cats, "regions": regions},
-        "orders": order_rows, "products": prod_rows, "ads": [],
+        "orders": order_rows, "products": prod_rows, "ads": [], "finance": finance,
     }
 
 
