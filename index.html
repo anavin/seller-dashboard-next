@@ -245,8 +245,8 @@
       <input type="text" id="dTo" class="dateinput" title="ถึงวันที่" placeholder="ถึงวันที่" readonly>
       <div id="calPop" class="cal-pop"></div>
       <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
-      <button id="backfillBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงข้อมูลย้อนหลังให้ครบทุกเดือน">🔄 ดึงย้อนหลัง</button>
-      <button id="financeBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงข้อมูลการเงิน (ยอดโอน) ย้อนหลังทั้งหมด">💵 ดึงการเงิน</button>
+      <button id="backfillBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงออเดอร์ + การเงิน ย้อนหลังทั้งหมด (เลือกปีเริ่มได้)">🔄 ดึงทั้งหมด</button>
+      <button id="financeBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงเฉพาะข้อมูลการเงิน (ยอดโอน) ย้อนหลัง">💵 ดึงการเงิน</button>
     </div>
   </div>
 
@@ -1120,43 +1120,56 @@ document.addEventListener('mouseout',e=>{if(e.target.closest('.info')&&tipBox)ti
 async function backfillAll(){
   const pw=(()=>{try{return sessionStorage.getItem('dpw');}catch(e){return null;}})();
   if(!pw){alert('กรุณาเข้าสู่ระบบใหม่ก่อน');return;}
-  if(!confirm('ดึงข้อมูลย้อนหลังทุกเดือนตั้งแต่ ม.ค. 2023 ถึงปัจจุบัน?\nใช้เวลาประมาณ 2-3 นาที (ห้ามปิดหน้านี้)'))return;
+  const now=new Date();
+  const sy=parseInt(prompt('ดึงทั้งหมด (ออเดอร์ + การเงิน) ย้อนหลังตั้งแต่ปี ค.ศ. ไหน?\nเช่น 2021 — ถ้า Lazada ไม่มีปีนั้น ระบบจะข้ามให้เอง\nยิ่งเริ่มปีเก่ายิ่งใช้เวลานาน','2021')||'',10);
+  if(!sy||sy<2015||sy>now.getFullYear())return;
   const btn=$('#backfillBtn'); btn.disabled=true;
   const pad=n=>String(n).padStart(2,'0');
-  const now=new Date(), months=[];
-  for(let y=2023,m=0; new Date(y,m,1)<=now; (m++,m>11&&(m=0,y++))){
+  // 1) ออเดอร์ — ทีละเดือน
+  const months=[];
+  for(let y=sy,m=0; new Date(y,m,1)<=now; (m++,m>11&&(m=0,y++))){
     const last=new Date(y,m+1,0).getDate();
     months.push([`${y}-${pad(m+1)}-01`,`${y}-${pad(m+1)}-${pad(last)}`]);
   }
   let i=0, added=0;
   for(const [f,t] of months){
-    i++; btn.textContent=`⏳ ${f.slice(0,7)} (${i}/${months.length})`;
+    i++; btn.textContent=`⏳ ออเดอร์ ${f.slice(0,7)} (${i}/${months.length})`;
     try{const r=await fetch(`/api/sync?pw=${encodeURIComponent(pw)}&from=${f}&to=${t}`);
       const j=await r.json(); if(j&&j.synced_orders)added+=j.synced_orders;
     }catch(e){}
   }
-  btn.textContent=`✓ ดึงครบ +${added.toLocaleString()} ออเดอร์`;
+  // 2) การเงิน — วนจน more:false
+  const since=`${sy}-01-01`; let fr=0, fmore=true, flines=0;
+  while(fmore && fr<80){
+    fr++; btn.textContent=`⏳ การเงิน รอบ ${fr}…`;
+    try{const r=await fetch(`/api/sync?pw=${encodeURIComponent(pw)}&finance=${since}`);
+      const j=await r.json(); if(j.error){break;} flines+=(j.txn_lines_added||0); fmore=!!j.more;
+    }catch(e){fmore=false;}
+  }
+  btn.textContent=`✓ +${added.toLocaleString()} ออเดอร์ · การเงิน ${flines.toLocaleString()} บรรทัด`;
   btn.disabled=false;
-  setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1000);
+  setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1200);
 }
 $('#backfillBtn').onclick=backfillAll;
 // ---------- ดึงการเงิน: วนเรียก finance=1 จนกว่า more=false ----------
 async function financeAll(){
   const pw=(()=>{try{return sessionStorage.getItem('dpw');}catch(e){return null;}})();
   if(!pw){alert('กรุณาเข้าสู่ระบบใหม่ก่อน');return;}
-  if(!confirm('ดึงข้อมูลการเงิน (ยอดโอนจริง) ย้อนหลังทั้งหมด?\nใช้เวลาประมาณ 1-2 นาที (ห้ามปิดหน้านี้)'))return;
+  const sy=parseInt(prompt('ดึงข้อมูลการเงินย้อนหลังตั้งแต่ปี ค.ศ. ไหน?\nเช่น 2021','2021')||'',10);
+  if(!sy||sy<2015||sy>new Date().getFullYear())return;
+  const since=`${sy}-01-01`;
   const btn=$('#financeBtn'); btn.disabled=true;
   let total=0, round=0, more=true;
-  while(more && round<25){
+  while(more && round<80){
     round++; btn.textContent=`⏳ ดึงการเงิน รอบ ${round}…`;
     try{
-      const r=await fetch(`/api/sync?pw=${encodeURIComponent(pw)}&finance=1`);
+      const r=await fetch(`/api/sync?pw=${encodeURIComponent(pw)}&finance=${since}`);
       const j=await r.json();
       if(j.error){btn.textContent='⚠️ '+j.error; btn.disabled=false; return;}
       total+=(j.txn_lines_added||j.statements_added||0); more=!!j.more;
     }catch(e){more=false;}
   }
-  btn.textContent=`✓ การเงิน +${total.toLocaleString()} ใบ`;
+  btn.textContent=`✓ การเงิน +${total.toLocaleString()} บรรทัด`;
   btn.disabled=false;
   setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1000);
 }
