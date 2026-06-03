@@ -213,9 +213,9 @@
         <span class="chip on lazada" data-plt="lazada"><span class="dot" style="background:var(--lazada)"></span>Lazada</span>
       </div>
       <select id="catSel"><option value="all">ทุกหมวดหมู่</option></select>
-      <select id="dFrom" class="dateinput" title="จากวันที่"></select>
+      <input type="date" id="dFrom" class="dateinput" title="จากวันที่">
       <span style="color:var(--soft);font-size:13px">–</span>
-      <select id="dTo" class="dateinput" title="ถึงวันที่"></select>
+      <input type="date" id="dTo" class="dateinput" title="ถึงวันที่">
       <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
     </div>
   </div>
@@ -891,11 +891,12 @@ function afterLoad(){
   }
   $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
     DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
-  // เติมรายการวันที่ลง dropdown เลือกช่วงเอง (เชื่อถือได้กว่าปฏิทินระบบ)
-  const allD = (DATA.meta.start_date && DATA.meta.end_date)
-    ? datesBetween(DATA.meta.start_date, DATA.meta.end_date) : [];
-  const opts = allD.map(d=>`<option value="${d}">${d}</option>`).join('');
-  $('#dFrom').innerHTML=opts; $('#dTo').innerHTML=opts;
+  // จำกัดช่วงปฏิทินให้เลือกได้เฉพาะวันที่มีข้อมูลจริง
+  if(DATA.meta.start_date && DATA.meta.end_date){
+    for(const el of [$('#dFrom'), $('#dTo')]){
+      el.min=DATA.meta.start_date; el.max=DATA.meta.end_date;
+    }
+  }
   render();
   syncDateInputs();
 }
