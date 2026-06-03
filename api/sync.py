@@ -154,6 +154,17 @@ def _fetch_items(access, app_key, app_secret, ids):
     return items_by
 
 
+def _buyer_key(o):
+    """ลายนิ้วมือผู้ซื้อจากที่อยู่จัดส่ง (ชื่อ+เบอร์+ที่อยู่+รหัสไปรษณีย์) -> hash สั้น ๆ"""
+    a = o.get("address_shipping") or {}
+    parts = [a.get("first_name"), a.get("last_name"), a.get("phone"), a.get("phone2"),
+             a.get("address1"), a.get("address2"), a.get("post_code"), a.get("city")]
+    s = "|".join(str(p).strip().lower() for p in parts if p)
+    if not s:
+        return ""
+    return hashlib.md5(s.encode("utf-8")).hexdigest()[:16]
+
+
 def _build_rows(raw, items_by, sku_cat):
     order_rows, item_rows = [], []
     for o in raw:
@@ -169,6 +180,7 @@ def _build_rows(raw, items_by, sku_cat):
             "customer": "new",
             "shipping_fee": float(o.get("shipping_fee", 0) or 0),
             "platform_fee": 0.0,
+            "buyer_key": _buyer_key(o),
             "created_at_lz": str(o.get("created_at", "")),
         })
         for n, it in enumerate(items_by.get(oid, [])):

@@ -229,6 +229,7 @@
     <a data-sec="profit"><span class="ic">💰</span> กำไร</a>
     <a data-sec="ads"><span class="ic">🎯</span> โฆษณา</a>
     <a data-sec="inventory"><span class="ic">🏷️</span> สต็อก</a>
+    <a data-sec="customers"><span class="ic">👥</span> ลูกค้า</a>
     <a data-sec="finance"><span class="ic">💵</span> การเงิน</a>
     <a data-sec="insight"><span class="ic">🔍</span> วิเคราะห์เชิงลึก</a>
     <a data-sec="advanced"><span class="ic">📊</span> วิเคราะห์ขั้นสูง</a>
@@ -365,6 +366,18 @@
       <div class="card" style="margin-top:14px">
         <div class="ctitle">⚠️ สินค้าใกล้หมด / หมดสต็อก (รวมทุกแพลตฟอร์ม &lt; 30 ชิ้น)</div>
         <div class="tbl-scroll" style="margin-top:10px"><table id="lowTable"></table></div>
+      </div>
+    </section>
+
+    <!-- CUSTOMERS / ลูกค้า — ใหม่ vs ซ้ำ (จากลายนิ้วมือที่อยู่) -->
+    <section class="section" id="sec-customers">
+      <h2><span class="bar"></span>ลูกค้า — ใหม่ vs ซื้อซ้ำ <span class="hint">ประเมินจากที่อยู่จัดส่ง (โดยประมาณ) · ใช้ข้อมูลทั้งหมด</span></h2>
+      <div class="grid kpis" id="custKpi"></div>
+      <div class="grid charts" style="margin-top:14px">
+        <div class="card c-5"><div class="ctitle">ออเดอร์: ลูกค้าใหม่ vs ซ้ำ</div><div class="csub">สัดส่วนจำนวนออเดอร์</div><div class="chart-wrap sm"><canvas id="newReturnChart"></canvas></div></div>
+        <div class="card c-7"><div class="ctitle">จำนวนครั้งที่ลูกค้าซื้อ</div><div class="csub">ลูกค้าส่วนใหญ่ซื้อกี่ครั้ง</div><div class="chart-wrap sm"><canvas id="freqChart"></canvas></div></div>
+        <div class="card c-12"><div class="ctitle">ลูกค้าใหม่ vs ออเดอร์ซ้ำ รายเดือน</div><div class="csub">น้ำเงิน=ลูกค้าใหม่ · เขียว=ออเดอร์จากลูกค้าเดิม</div><div class="chart-wrap sm"><canvas id="custTrendChart"></canvas></div></div>
+        <div class="card c-12"><div class="ctitle">ลูกค้าประจำ (ซื้อซ้ำมากสุด)</div><div class="csub">ปกปิดตัวตน — แสดงเป็นรหัส</div><div class="tbl-scroll" style="margin-top:10px"><table id="custTable"></table></div></div>
       </div>
     </section>
 
@@ -609,6 +622,7 @@ function render(){
   markEmpty('sec-ads', !(ad.spend>0||ad.rev>0));
   markEmpty('sec-profit', !(s.cogs>0||s.fee>0||ad.spend>0));
   markEmpty('sec-finance', !(DATA.finance&&DATA.finance.length));
+  markEmpty('sec-customers', !(DATA.orders||[]).some(o=>o.buyer));
   applyVisibility();
 
   let syncStr='';
@@ -691,6 +705,44 @@ function render(){
   renderInsight();
   renderFinance();
   renderAdvanced();
+  renderCustomers();
+}
+// ---------- ลูกค้า: ใหม่ vs ซื้อซ้ำ (จากลายนิ้วมือที่อยู่) ----------
+function renderCustomers(){
+  const wk=DATA.orders.filter(o=>o.platform==='lazada'&&o.status!=='cancelled'&&o.status!=='returned'&&o.buyer);
+  if(!wk.length)return;
+  const accent=cssvar('--accent'); const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
+  const sorted=[...wk].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const seen=new Set(); let newOrd=0,retOrd=0; const byMonth={}, buyer={};
+  for(const o of sorted){
+    const k=o.buyer, r=revOf(o), mo=(o.date||'').slice(0,7), first=!seen.has(k);
+    if(first){seen.add(k);newOrd++;}else retOrd++;
+    (byMonth[mo]||(byMonth[mo]={nw:new Set(),rt:0})); if(first)byMonth[mo].nw.add(k); else byMonth[mo].rt++;
+    const b=buyer[k]||(buyer[k]={orders:0,rev:0,region:o.region||'',last:o.date});
+    b.orders++; b.rev+=r; b.last=o.date;
+  }
+  const uniq=Object.keys(buyer).length, repeatB=Object.values(buyer).filter(b=>b.orders>=2).length;
+  const totOrd=newOrd+retOrd;
+  $('#custKpi').innerHTML=
+    kpiCard('ลูกค้าทั้งหมด (ไม่ซ้ำ)',fmt(uniq))+
+    kpiCard('ลูกค้าซื้อซ้ำ',fmt(repeatB)+' ('+(uniq?(repeatB/uniq*100):0).toFixed(0)+'%)')+
+    kpiCard('ออเดอร์จากลูกค้าซ้ำ',(totOrd?retOrd/totOrd*100:0).toFixed(0)+'%')+
+    kpiCard('ออเดอร์เฉลี่ย/ลูกค้า',uniq?(totOrd/uniq).toFixed(2):'0');
+  mk('newReturnChart',{type:'doughnut',data:{labels:['ลูกค้าใหม่','ลูกค้าซ้ำ'],datasets:[{data:[newOrd,retOrd],backgroundColor:[accent,'#10b981'],borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  const fb={'1 ครั้ง':0,'2 ครั้ง':0,'3-4 ครั้ง':0,'5+ ครั้ง':0};
+  for(const b of Object.values(buyer)){const n=b.orders; fb[n<=1?'1 ครั้ง':n===2?'2 ครั้ง':n<=4?'3-4 ครั้ง':'5+ ครั้ง']++;}
+  mk('freqChart',{type:'bar',data:{labels:Object.keys(fb),datasets:[{data:Object.values(fb),backgroundColor:accent,borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{precision:0}}}}});
+  const mks=Object.keys(byMonth).sort();
+  mk('custTrendChart',{type:'bar',data:{labels:mks,datasets:[
+    {label:'ลูกค้าใหม่',data:mks.map(m=>byMonth[m].nw.size),backgroundColor:accent,borderRadius:4},
+    {label:'ออเดอร์ซ้ำ',data:mks.map(m=>byMonth[m].rt),backgroundColor:'#10b981',borderRadius:4}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{precision:0}}}}});
+  const top=Object.entries(buyer).filter(e=>e[1].orders>=2).sort((a,b)=>b[1].orders-a[1].orders||b[1].rev-a[1].rev).slice(0,lim('custTable',20));
+  $('#custTable').innerHTML='<thead><tr><th>ลูกค้า (ปกปิด)</th><th>พื้นที่</th><th class="num">จำนวนครั้ง</th><th class="num">ยอดรวม</th><th>ซื้อล่าสุด</th></tr></thead><tbody>'+
+    (top.length?top.map(e=>`<tr><td class="muted">#${e[0].slice(0,6)}</td><td>${(e[1].region||'').split('/')[0]}</td><td class="num">${e[1].orders}</td><td class="num">${fmt(e[1].rev)}</td><td>${e[1].last}</td></tr>`).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">ยังไม่มีลูกค้าซื้อซ้ำในข้อมูล</td></tr>')+'</tbody>';
 }
 // ---------- วิเคราะห์ขั้นสูง (ใช้ข้อมูลทั้งหมด) ----------
 function renderAdvanced(){
@@ -1282,6 +1334,10 @@ const CHART_HELP=[
   ['ยอดโอนสุทธิ','ยอดขายที่ settle แล้ว (น้ำเงิน), ค่าธรรมเนียมที่ Lazada หัก (แดง), และยอดที่โอนเข้าบัญชีจริง (เขียว) รายเดือน — ตัวเลขจริงจาก Lazada Finance'],
   ['อัตราค่าธรรมเนียม','สัดส่วนค่าธรรมเนียมที่ถูกหัก เทียบยอดขาย เป็น % รายเดือน ยิ่งต่ำยิ่งดี'],
   ['ยอดสั่งซื้อ vs','เทียบยอดสั่งซื้อจากออเดอร์ (น้ำเงิน) กับยอดที่เคลียร์ผ่าน Lazada Finance จริง (เขียว) · ช่องว่าง = เงินที่ยังรอเคลียร์ หรือหายไปจากของคืน/ยกเลิก'],
+  ['ออเดอร์: ลูกค้าใหม่ vs ซ้ำ','สัดส่วนออเดอร์จากลูกค้าใหม่ (ซื้อครั้งแรก) กับลูกค้าเดิมที่กลับมาซื้อซ้ำ · ประเมินจากลายนิ้วมือที่อยู่จัดส่ง'],
+  ['จำนวนครั้งที่ลูกค้าซื้อ','ลูกค้าแต่ละคนซื้อกี่ครั้ง (1, 2, 3-4, 5+ ครั้ง) — ดูฐานลูกค้าประจำ'],
+  ['ลูกค้าใหม่ vs ออเดอร์ซ้ำ รายเดือน','น้ำเงิน=ลูกค้าใหม่ที่ซื้อครั้งแรกในเดือนนั้น · เขียว=ออเดอร์จากลูกค้าเดิม'],
+  ['ลูกค้าประจำ','ลูกค้าที่ซื้อซ้ำมากสุด (ปกปิดตัวตน แสดงเป็นรหัส) · จำนวนครั้ง ยอดรวม และวันที่ซื้อล่าสุด'],
   ['ใบสรุปยอดโอน','รายการ settlement แต่ละใบจาก Lazada — ยอดขาย ค่าธรรมเนียม และยอดโอนสุทธิเข้าบัญชี'],
   ['พยากรณ์ยอดขาย','คาดการณ์ยอด 3 เดือนข้างหน้าจากเทรนด์ + ฤดูกาล · แถบจาง = ช่วงคลาดเคลื่อนที่เป็นไปได้ (±1 SD)'],
   ['วันแคมเปญดันยอด','ยอดขายเฉลี่ยต่อวัน เทียบ 3 แบบ: วันเลขเบิ้ล (1.1, 11.11…), วันเงินเดือนออก (25-สิ้นเดือน), และวันธรรมดา'],

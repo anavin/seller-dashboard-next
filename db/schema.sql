@@ -47,6 +47,9 @@ alter table lz_sync add column if not exists refresh_token text;
 insert into lz_sync (id, last_sync_time) values (1, null)
   on conflict (id) do nothing;
 
+-- ลายนิ้วมือผู้ซื้อ (จากที่อยู่จัดส่ง) ใช้จับลูกค้าซ้ำ — ถ้าตารางมีอยู่แล้วให้รัน alter
+alter table lz_orders add column if not exists buyer_key text;
+
 -- การเงิน: ใบสรุปยอดโอน (payout statement) จาก Lazada Finance API
 create table if not exists lz_finance (
   statement_number text primary key,

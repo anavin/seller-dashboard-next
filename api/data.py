@@ -63,6 +63,7 @@ def build_from_db():
         "region": o.get("region", "") or "", "customer": o.get("customer", "new"),
         "shipping_fee": float(o.get("shipping_fee", 0) or 0),
         "platform_fee": float(o.get("platform_fee", 0) or 0),
+        "buyer": o.get("buyer_key", "") or "",
         "items": by_order.get(o["order_id"], []),
     } for o in orders]
 
@@ -133,6 +134,36 @@ def _call_soft(base, path, app_key, app_secret, access, extra=None):
         return _call(base, path, app_key, app_secret, access, extra)
     except Exception:
         return None
+
+
+def order_sample():
+    """ดูว่า Lazada ส่งฟิลด์ผู้ซื้อ/ที่อยู่อะไรมาบ้าง (ประเมินว่าทำ repeat-customer ได้ไหม)"""
+    app_key = os.environ["LZ_APP_KEY"]
+    app_secret = os.environ["LZ_APP_SECRET"]
+    rt = None
+    try:
+        sy = _sb_all("lz_sync", "refresh_token")
+        rt = sy[0].get("refresh_token") if sy else None
+    except Exception:
+        rt = None
+    rt = rt or os.environ.get("LZ_REFRESH_TOKEN", "")
+    access = _refresh(app_key, app_secret, rt)
+    now = datetime.datetime.now().astimezone()
+    since = (now - datetime.timedelta(days=30)).replace(microsecond=0).isoformat()
+    d = _call(LAZADA_BASE, "/orders/get", app_key, app_secret, access,
+              {"created_after": since, "limit": 3, "sort_direction": "DESC"})
+    orders = (d.get("data") or {}).get("orders") or []
+    out = []
+    for o in orders[:3]:
+        out.append({
+            "order_id": o.get("order_id"),
+            "customer_first_name": o.get("customer_first_name"),
+            "customer_last_name": o.get("customer_last_name"),
+            "address_shipping": o.get("address_shipping"),
+            "all_order_keys": sorted(o.keys()),
+        })
+    return {"sample_orders": out,
+            "หมายเหตุ": "ดูว่ามี postcode/phone/address1 ที่พอใช้ทำลายนิ้วมือผู้ซื้อได้ไหม"}
 
 
 def _refresh(app_key, app_secret, refresh_token):
@@ -466,12 +497,16 @@ class handler(BaseHTTPRequestHandler):
         stats = qs.get("stats", ["0"])[0] in ("1", "true", "yes")
         summary = qs.get("summary", [""])[0]
         fincheck = qs.get("fincheck", ["0"])[0] in ("1", "true", "yes")
+        ordersample = qs.get("ordersample", ["0"])[0] in ("1", "true", "yes")
         if pw != os.environ.get("DASH_PASSWORD", ""):
             self._send(401, {"error": "unauthorized"})
             return
         try:
             if fincheck:
                 self._send(200, finance_check())
+                return
+            if ordersample:
+                self._send(200, order_sample())
                 return
             if summary == "week" and SB_URL and SB_KEY:
                 self._send(200, summary_week())
