@@ -462,6 +462,8 @@ const CAT_PALETTE=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4','
 let CAT_COLORS={};
 function buildCatColors(){CAT_COLORS={};(DATA&&DATA.meta&&DATA.meta.categories||[]).forEach((c,i)=>{CAT_COLORS[c]=CAT_PALETTE[i%CAT_PALETTE.length];});}
 function catColor(c){return CAT_COLORS[c]||'#94a3b8';}
+// หมวดที่ไม่อยากแสดงในกราฟวิเคราะห์ (ข้อมูลน้อย/ไม่เกี่ยว)
+const HIDE_CATS=new Set(['Air Fresheners','Beliefs & Religious Decoration']);
 // 50 เขตของกรุงเทพฯ (ใช้แยก กทม. vs ต่างจังหวัด จากชื่อเขต)
 const BKK_KHET=new Set(['พระนคร','ดุสิต','หนองจอก','บางรัก','บางเขน','บางกะปิ','ปทุมวัน','ป้อมปราบศัตรูพ่าย','พระโขนง','มีนบุรี','ลาดกระบัง','ยานนาวา','สัมพันธวงศ์','พญาไท','ธนบุรี','บางกอกใหญ่','ห้วยขวาง','คลองสาน','ตลิ่งชัน','บางกอกน้อย','บางขุนเทียน','ภาษีเจริญ','หนองแขม','ราษฎร์บูรณะ','บางพลัด','ดินแดง','บึงกุ่ม','สาทร','บางซื่อ','จตุจักร','บางคอแหลม','ประเวศ','คลองเตย','สวนหลวง','จอมทอง','ดอนเมือง','ราชเทวี','ลาดพร้าว','วัฒนา','บางแค','หลักสี่','สายไหม','คันนายาว','สะพานสูง','วังทองหลาง','คลองสามวา','บางนา','ทวีวัฒนา','ทุ่งครุ','บางบอน']);
 // จัดรูปแบบป้ายแกนวันที่ให้อ่านง่าย: ช่วงสั้น=วัน/เดือน, ช่วงยาว=เดือน ปีพ.ศ.(2หลัก)
@@ -876,10 +878,9 @@ function renderAdvanced(){
       scales:{x:{title:{display:true,text:'ยอดขาย 90 วัน'},ticks:{callback:fmtK}},y:{title:{display:true,text:'เติบโต %'},ticks:{callback:v=>v+'%'}}}}});
   // ===== 4) ยกเลิก/คืน ตามหมวด =====
   const cTot={},cCan={};
-  const cancelHide=new Set(['Air Fresheners','Beliefs & Religious Decoration']);
   for(const o of allO)for(const i of o.items){if(!i.category)continue;cTot[i.category]=(cTot[i.category]||0)+1;
     if(o.status==='cancelled'||o.status==='returned')cCan[i.category]=(cCan[i.category]||0)+1;}
-  const cc=Object.keys(cTot).filter(c=>!cancelHide.has(c));
+  const cc=Object.keys(cTot).filter(c=>!HIDE_CATS.has(c));
   mk('cancelChart',{type:'bar',data:{labels:cc,datasets:[{data:cc.map(c=>cTot[c]?(cCan[c]||0)/cTot[c]*100:0),backgroundColor:cc.map(c=>catColor(c)),borderRadius:6}]},
     options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>v.toFixed(0)+'%'}}}}});
   // ===== 5) ml เชิงลึก =====
@@ -966,7 +967,7 @@ function renderInsight(){
   mk('seasonChart',{type:'bar',data:{labels:THMON,datasets:[{data:seas,backgroundColor:seas.map(v=>v===peak&&v>0?'#10b981':accent),borderRadius:5}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
   // 3) หมวดหมู่ตามเวลา (stacked)
-  const cats=DATA.meta.categories.slice();
+  const cats=DATA.meta.categories.filter(c=>!HIDE_CATS.has(c));
   const monthsSet=[...new Set(valid.map(o=>o.date.slice(0,7)))].sort();
   const mi=Object.fromEntries(monthsSet.map((m,i)=>[m,i]));
   const cbm={}; cats.forEach(c=>cbm[c]=monthsSet.map(()=>0));
@@ -995,8 +996,16 @@ function renderInsight(){
   for(const o of valid){const sk=[...new Set(o.items.map(i=>i.name||i.sku))];
     for(let a=0;a<sk.length;a++)for(let b=a+1;b<sk.length;b++){const key=[sk[a],sk[b]].sort().join('|');pc[key]=(pc[key]||0)+1;}}
   const pairs=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,lim('basketTable',10));
-  $('#basketTable').innerHTML='<thead><tr><th>คู่สินค้า</th><th class="num">ซื้อคู่กัน (ครั้ง)</th></tr></thead><tbody>'+
-    (pairs.length?pairs.map(([k,n])=>`<tr><td>${k.split('|').join(' + ')}</td><td class="num">${fmt(n)}</td></tr>`).join(''):'<tr><td colspan="2" class="muted" style="text-align:center;padding:14px">ลูกค้าส่วนใหญ่ซื้อทีละชิ้น</td></tr>')+'</tbody>';
+  const sh=s=>{s=''+s;return s.length>26?s.slice(0,26)+'…':s;};
+  const esc=s=>(''+s).replace(/"/g,'&quot;');
+  $('#basketTable').innerHTML='<thead><tr><th>#</th><th>สินค้า A</th><th style="text-align:center">คู่กับ</th><th>สินค้า B</th><th class="num">ครั้ง</th></tr></thead><tbody>'+
+    (pairs.length?pairs.map(([k,n],i)=>{const p=k.split('|');return `<tr>
+      <td class="muted">${i+1}</td>
+      <td title="${esc(p[0])}">${sh(p[0])}</td>
+      <td style="text-align:center;color:var(--accent);font-weight:700">+</td>
+      <td title="${esc(p[1])}">${sh(p[1])}</td>
+      <td class="num"><span style="background:var(--accent-soft);color:var(--accent);padding:2px 9px;border-radius:11px;font-weight:700;white-space:nowrap">${fmt(n)}×</span></td></tr>`;}).join('')
+    :'<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">ลูกค้าส่วนใหญ่ซื้อทีละชิ้น</td></tr>')+'</tbody>';
 }
 function renderTrends(curD){
   const valid=ordersIn(new Set(curD)).filter(o=>o.status!=='cancelled'&&o.status!=='returned');
