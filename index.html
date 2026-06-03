@@ -401,6 +401,7 @@
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-8"><div class="ctitle">พยากรณ์ยอดขาย 3 เดือนข้างหน้า</div><div class="csub">เส้นทึบ = จริง · เส้นประเขียว = คาดการณ์ (เทรนด์+ฤดูกาล)</div><div class="chart-wrap"><canvas id="forecastChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">วันแคมเปญดันยอดแค่ไหน</div><div class="csub">ยอดเฉลี่ย/วัน แยกประเภทวัน</div><div class="chart-wrap"><canvas id="campaignChart"></canvas></div></div>
+        <div class="card c-12"><div class="ctitle">เอฟเฟกต์วันเลขเบิ้ล (±2 วัน)</div><div class="csub">ยอดเฉลี่ย/วัน รอบวันเบิ้ล (11.11 ฯลฯ) เทียบวันปกติ — ดูว่ายอดพุ่งเฉพาะวันหรือกระจาย</div><div class="chart-wrap sm"><canvas id="ddWindowChart"></canvas></div></div>
         <div class="card c-7"><div class="ctitle">Growth Matrix สินค้า</div><div class="csub">แกนนอน=ยอดขาย 90วัน · แกนตั้ง=เติบโต% · เขียว=ดาวรุ่ง แดง=ควรตัด</div><div class="chart-wrap"><canvas id="growthChart"></canvas></div></div>
         <div class="card c-5"><div class="ctitle">อัตรายกเลิก/คืน ตามหมวด</div><div class="csub">% ของออเดอร์ที่ถูกยกเลิก/คืน</div><div class="chart-wrap"><canvas id="cancelChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">ราคาเฉลี่ย/ชิ้น ตามขนาด (ml)</div><div class="csub">ขนาดไหนมูลค่าต่อชิ้นสูง</div><div class="chart-wrap sm"><canvas id="mlPriceChart"></canvas></div></div>
@@ -733,6 +734,18 @@ function renderAdvanced(){
   const cAvg=[occ.dd?sm.dd/occ.dd:0,occ.pay?sm.pay/occ.pay:0,occ.n?sm.n/occ.n:0];
   mk('campaignChart',{type:'bar',data:{labels:['แคมเปญ\n(เลขเบิ้ล)','เงินเดือนออก\n(25-สิ้นเดือน)','วันธรรมดา'],
     datasets:[{data:cAvg,backgroundColor:['#ef4444','#f59e0b',accent],borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  // ===== 2b) เอฟเฟกต์วันเลขเบิ้ล ±2 วัน =====
+  const ddSet=[]; const yrs=[...new Set(Object.keys(dayRev).map(d=>+d.slice(0,4)))];
+  for(const y of yrs)for(let M=1;M<=12;M++)ddSet.push(new Date(y+'-'+String(M).padStart(2,'0')+'-'+String(M).padStart(2,'0')+'T00:00:00').getTime());
+  const offS={'-2':0,'-1':0,'0':0,'1':0,'2':0,base:0}, offC={'-2':0,'-1':0,'0':0,'1':0,'2':0,base:0};
+  for(const d in dayRev){const t=new Date(d+'T00:00:00').getTime(); let best=null;
+    for(const z of ddSet){const off=Math.round((t-z)/86400000); if(Math.abs(off)<=2&&(best===null||Math.abs(off)<Math.abs(best)))best=off;}
+    const k=best===null?'base':String(best); offS[k]+=dayRev[d]; offC[k]++;}
+  const ddKeys=['-2','-1','0','1','2','base'];
+  const ddAvg=ddKeys.map(k=>offC[k]?offS[k]/offC[k]:0);
+  mk('ddWindowChart',{type:'bar',data:{labels:['-2 วัน','-1 วัน','วันเบิ้ล','+1 วัน','+2 วัน','วันปกติ'],
+    datasets:[{data:ddAvg,backgroundColor:['#fb923c','#f59e0b','#ef4444','#f59e0b','#fb923c',accent],borderRadius:6}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
   // ===== 3) Growth Matrix =====
   const end=DATA.meta.end_date,d90=addDays(end,-90),d180=addDays(end,-180);
@@ -1272,6 +1285,7 @@ const CHART_HELP=[
   ['ใบสรุปยอดโอน','รายการ settlement แต่ละใบจาก Lazada — ยอดขาย ค่าธรรมเนียม และยอดโอนสุทธิเข้าบัญชี'],
   ['พยากรณ์ยอดขาย','คาดการณ์ยอด 3 เดือนข้างหน้าจากเทรนด์ + ฤดูกาล · แถบจาง = ช่วงคลาดเคลื่อนที่เป็นไปได้ (±1 SD)'],
   ['วันแคมเปญดันยอด','ยอดขายเฉลี่ยต่อวัน เทียบ 3 แบบ: วันเลขเบิ้ล (1.1, 11.11…), วันเงินเดือนออก (25-สิ้นเดือน), และวันธรรมดา'],
+  ['เอฟเฟกต์วันเลขเบิ้ล','ยอดเฉลี่ย/วัน รอบ ๆ วันเลขเบิ้ล (−2 ถึง +2 วัน) เทียบกับวันปกติ — ดูว่ายอดพุ่งเฉพาะวันเบิ้ล หรือกระจายไปวันก่อน/หลังด้วย ช่วยวางแผนสต็อก/ยิงแอดล่วงหน้า'],
   ['Growth Matrix','จุด = 1 สินค้า · แกนนอน = ยอดขาย 90 วัน · แกนตั้ง = อัตราเติบโต % · เขียว=ดาวรุ่ง(ขายดี+โต) น้ำเงิน=ดาวรุ่งใหม่ ส้ม=วัวเงินสด(ขายดีแต่ตก) แดง=ควรตัด'],
   ['อัตรายกเลิก/คืน ตามหมวด','% ออเดอร์ที่ถูกยกเลิก/คืน แยกตามหมวด — หมวดไหนมีปัญหามากสุด'],
   ['ราคาเฉลี่ย/ชิ้น ตามขนาด','ราคาขายเฉลี่ยต่อชิ้นของแต่ละขนาดขวด (ml)'],
