@@ -350,6 +350,7 @@
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-8"><div class="ctitle">ยอดขาย · ค่าธรรมเนียม · ยอดโอนสุทธิ</div><div class="csub">รายเดือน</div><div class="chart-wrap"><canvas id="finChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">อัตราค่าธรรมเนียม</div><div class="csub">% ของยอดขาย รายเดือน</div><div class="chart-wrap"><canvas id="feeRateChart"></canvas></div></div>
+        <div class="card c-12"><div class="ctitle">ยอดสั่งซื้อ vs ยอด settle จริง</div><div class="csub">รายเดือน · ช่องว่าง = เงินที่ยังรอเคลียร์ / หายจากของคืน</div><div class="chart-wrap"><canvas id="settleVsOrderChart"></canvas></div></div>
         <div class="card c-12"><div class="ctitle">ใบสรุปยอดโอนล่าสุด</div><div class="csub">30 ใบล่าสุด</div><div class="tbl-scroll" style="margin-top:10px"><table id="finTable"></table></div></div>
       </div>
     </section>
@@ -774,6 +775,17 @@ function renderFinance(){
   mk('feeRateChart',{type:'line',data:{labels:mks,datasets:[{label:'%',data:mks.map(k=>m[k].rev?Math.abs(m[k].fee)/m[k].rev*100:0),
     borderColor:'#f59e0b',backgroundColor:'#f59e0b22',fill:true,tension:.3,pointRadius:0,borderWidth:2}]},
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:xtick},y:{ticks:{callback:v=>v+'%'}}}}});
+  // ยอดสั่งซื้อ (จากออเดอร์) vs ยอด settle จริง (จากการเงิน) รายเดือน
+  const ordM={};
+  for(const o of (DATA.orders||[])){ if(o.platform!=='lazada'||o.status==='cancelled'||o.status==='returned')continue;
+    const k=(o.date||'').slice(0,7); if(!k)continue; ordM[k]=(ordM[k]||0)+o.items.reduce((s,i)=>s+i.qty*i.price,0); }
+  const allM=[...new Set([...Object.keys(ordM),...mks])].sort();
+  mk('settleVsOrderChart',{type:'bar',data:{labels:allM,datasets:[
+    {label:'ยอดสั่งซื้อ (ออเดอร์)',data:allM.map(k=>ordM[k]||0),backgroundColor:accent,borderRadius:5},
+    {label:'ยอด settle จริง',data:allM.map(k=>m[k]?m[k].rev:0),backgroundColor:'#10b981',borderRadius:5}]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{x:{ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{ticks:{callback:fmtK}}}}});
   const recent=[...fin].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,30);
   $('#finTable').innerHTML='<thead><tr><th>ใบโอน</th><th>วันที่</th><th class="num">ยอดขาย</th><th class="num">ค่าธรรมเนียม</th><th class="num">โอนสุทธิ</th></tr></thead><tbody>'+
     recent.map(s=>`<tr><td class="muted">${s.statement}</td><td>${s.date}</td><td class="num">${fmt(s.revenue)}</td><td class="num neg">${fmt(s.fees)}</td><td class="num pos">${fmt(s.payout)}</td></tr>`).join('')+'</tbody>';
@@ -1227,6 +1239,7 @@ const CHART_HELP=[
   ['ซื้อคู่กันบ่อย','คู่สินค้าที่ลูกค้ามักซื้อพร้อมกันในออเดอร์เดียว ไว้จัดเซ็ต/บันเดิลเพิ่มยอดต่อบิล'],
   ['ยอดโอนสุทธิ','ยอดขายที่ settle แล้ว (น้ำเงิน), ค่าธรรมเนียมที่ Lazada หัก (แดง), และยอดที่โอนเข้าบัญชีจริง (เขียว) รายเดือน — ตัวเลขจริงจาก Lazada Finance'],
   ['อัตราค่าธรรมเนียม','สัดส่วนค่าธรรมเนียมที่ถูกหัก เทียบยอดขาย เป็น % รายเดือน ยิ่งต่ำยิ่งดี'],
+  ['ยอดสั่งซื้อ vs','เทียบยอดสั่งซื้อจากออเดอร์ (น้ำเงิน) กับยอดที่เคลียร์ผ่าน Lazada Finance จริง (เขียว) · ช่องว่าง = เงินที่ยังรอเคลียร์ หรือหายไปจากของคืน/ยกเลิก'],
   ['ใบสรุปยอดโอน','รายการ settlement แต่ละใบจาก Lazada — ยอดขาย ค่าธรรมเนียม และยอดโอนสุทธิเข้าบัญชี'],
   ['พยากรณ์ยอดขาย','คาดการณ์ยอด 3 เดือนข้างหน้าจากเทรนด์ + ฤดูกาล · แถบจาง = ช่วงคลาดเคลื่อนที่เป็นไปได้ (±1 SD)'],
   ['วันแคมเปญดันยอด','ยอดขายเฉลี่ยต่อวัน เทียบ 3 แบบ: วันเลขเบิ้ล (1.1, 11.11…), วันเงินเดือนออก (25-สิ้นเดือน), และวันธรรมดา'],
