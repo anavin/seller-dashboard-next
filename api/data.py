@@ -546,10 +546,11 @@ class handler(BaseHTTPRequestHandler):
             self._send(500, {"error": str(e)})
 
     def _send(self, code, obj, cache=False):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         if cache:
-            self.send_header("Cache-Control", "s-maxage=900, stale-while-revalidate=600")
+            # fresh 10 นาที · หลังจากนั้นเสิร์ฟของเดิมทันทีแล้วอัปเดตเบื้องหลังได้ถึง 1 วัน
+            self.send_header("Cache-Control", "s-maxage=600, stale-while-revalidate=86400")
         self.end_headers()
         self.wfile.write(body)
