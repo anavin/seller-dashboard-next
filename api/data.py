@@ -75,11 +75,17 @@ def build_from_db():
     dates = sorted({r["date"] for r in order_rows if r["date"]})
     cats = sorted({i["category"] for r in order_rows for i in r["items"] if i["category"]})
     regions = sorted({r["region"] for r in order_rows if r["region"]})
+    last_sync = None
+    try:
+        sy = _sb_all("lz_sync", "last_sync_time")
+        last_sync = sy[0].get("last_sync_time") if sy else None
+    except Exception:
+        last_sync = None
     return {
         "meta": {"currency": "THB",
                  "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
                  "start_date": dates[0] if dates else "", "end_date": dates[-1] if dates else "",
-                 "days": len(dates), "source": "supabase",
+                 "days": len(dates), "source": "supabase", "last_sync": last_sync,
                  "platforms": ["tiktok", "shopee", "lazada"], "categories": cats, "regions": regions},
         "orders": order_rows, "products": prod_rows, "ads": [],
     }

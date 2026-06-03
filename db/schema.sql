@@ -39,8 +39,11 @@ create table if not exists lz_products (
 create table if not exists lz_sync (
   id              int primary key default 1,
   last_sync_time  timestamptz,
+  refresh_token   text,
   updated_at      timestamptz default now()
 );
+-- ถ้าตารางมีอยู่แล้ว ให้เพิ่มคอลัมน์นี้ (กัน token หมดอายุ)
+alter table lz_sync add column if not exists refresh_token text;
 insert into lz_sync (id, last_sync_time) values (1, null)
   on conflict (id) do nothing;
 

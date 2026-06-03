@@ -57,7 +57,7 @@ def _refresh(app_key, app_secret, rt):
     d = _lz("/auth/token/refresh", app_key, app_secret, None, {"refresh_token": rt}, base=AUTH_BASE)
     if not d.get("access_token"):
         raise RuntimeError(f"refresh failed: {d}")
-    return d["access_token"]
+    return d["access_token"], d.get("refresh_token", rt)
 
 
 def _hour(s):
@@ -120,12 +120,12 @@ def sb_delete_items(order_ids):
 def run_sync():
     app_key = os.environ["LZ_APP_KEY"]
     app_secret = os.environ["LZ_APP_SECRET"]
-    rt = os.environ["LZ_REFRESH_TOKEN"]
-    access = _refresh(app_key, app_secret, rt)
-
     now = datetime.datetime.now().astimezone()
-    # เวลาที่ sync ล่าสุด (incremental)
-    state = sb_get("lz_sync", "id=eq.1&select=last_sync_time")
+    # อ่านสถานะล่าสุด + refresh_token ที่เก็บไว้ (กัน token หมดอายุ — ต่ออายุเองทุกครั้ง)
+    state = sb_get("lz_sync", "id=eq.1&select=last_sync_time,refresh_token")
+    stored_rt = state[0].get("refresh_token") if state else None
+    rt = stored_rt or os.environ["LZ_REFRESH_TOKEN"]
+    access, new_rt = _refresh(app_key, app_secret, rt)
     last = state[0]["last_sync_time"] if state and state[0].get("last_sync_time") else None
     if last:
         since = datetime.datetime.fromisoformat(last.replace("Z", "+00:00")) - datetime.timedelta(minutes=15)
@@ -217,7 +217,7 @@ def run_sync():
         sb_upsert("lz_products", list(prod_rows.values()), "sku")
 
     sb_upsert("lz_sync", [{"id": 1, "last_sync_time": now.isoformat(),
-                           "updated_at": now.isoformat()}], "id")
+                           "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
 
     return {"ok": True, "synced_orders": len(order_rows), "items": len(item_rows),
             "products": len(prod_rows), "since": since_iso}

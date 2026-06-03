@@ -220,6 +220,7 @@
     <!-- OVERVIEW -->
     <section class="section" id="sec-overview">
       <h2><span class="bar"></span>ภาพรวม <span class="hint" id="ovHint"></span></h2>
+      <div id="insightBar" style="display:none;background:var(--accent-soft);border:1px solid var(--line);border-radius:12px;padding:11px 16px;font-size:13px;margin-bottom:14px;line-height:1.7"></div>
       <div class="grid kpis" id="kpiGrid"></div>
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-8"><div class="ctitle">แนวโน้มยอดขายรายวัน</div><div class="csub">แยกตามแพลตฟอร์ม (พื้นที่ซ้อน)</div><div class="chart-wrap"><canvas id="trendChart"></canvas></div></div>
@@ -468,7 +469,14 @@ function render(){
   markEmpty('sec-profit', !(s.cogs>0||s.fee>0||ad.spend>0));
   applyVisibility();
 
-  $('#metaLine').textContent=`${curD[0]} ถึง ${curD[curD.length-1]} · ${curD.length} วัน · ${DATA.meta.currency} · อัปเดต ${DATA.meta.generated_at.replace('T',' ')}`;
+  let syncStr='';
+  if(DATA.meta.last_sync){
+    const hAgo=(Date.now()-new Date(DATA.meta.last_sync).getTime())/3600000;
+    syncStr = hAgo<48
+      ? ` · <span style="color:var(--green)">● ซิงค์ ${hAgo<1?'<1':Math.round(hAgo)} ชม.ที่แล้ว</span>`
+      : ` · <span style="color:var(--red)">⚠️ ซิงค์ ${Math.round(hAgo/24)} วันที่แล้ว — token อาจหมดอายุ ให้รัน /api/sync</span>`;
+  }
+  $('#metaLine').innerHTML=`${curD[0]} ถึง ${curD[curD.length-1]} · ${curD.length} วัน · ${DATA.meta.currency}${syncStr}`;
   $('#ovHint').textContent=`เทียบกับ ${curD.length} วันก่อนหน้า`;
   $('#catSel').style.display = DATA.meta.categories.length ? '' : 'none';
 
@@ -491,6 +499,21 @@ function render(){
                        kpiCard('อัตรากำไรสุทธิ',margin.toFixed(1)+'%',delta(margin,marginp));
   if(hasAds)  cards += kpiCard('ROAS โฆษณา',ad.roas.toFixed(2)+'x',delta(ad.roas,adp.roas));
   $('#kpiGrid').innerHTML = cards;
+  // สรุป insight อัตโนมัติ
+  (function(){
+    const bits=[];
+    if(sp.rev>0){const g=(s.rev-sp.rev)/sp.rev*100;
+      bits.push(`ยอดขาย<b style="color:${g>=0?'var(--green)':'var(--red)'}">${g>=0?' โต ▲':' ลด ▼'} ${Math.abs(g).toFixed(0)}%</b> เทียบช่วงก่อน`);}
+    const pr={}; for(const o of ordersIn(curSet)){if(o.status==='cancelled'||o.status==='returned')continue;
+      for(const i of o.items){if(!matchCat(i))continue;const k=i.name||i.sku;pr[k]=(pr[k]||0)+i.qty*i.price;}}
+    const top=Object.entries(pr).sort((a,b)=>b[1]-a[1])[0];
+    if(top)bits.push(`สินค้าขายดี: <b>${top[0]}</b>`);
+    const outN=DATA.products.filter(p=>(p.stock.tiktok+p.stock.shopee+p.stock.lazada)===0).length;
+    if(outN>0)bits.push(`<span style="color:var(--red)">⚠️ หมดสต็อก ${outN} รายการ</span>`);
+    const el=$('#insightBar');
+    el.innerHTML = bits.length ? '💡 '+bits.join(' &nbsp;·&nbsp; ') : '';
+    el.style.display = bits.length ? '' : 'none';
+  })();
   spark('spkRev',dailyTotal,PLT.lazada.c);
   const dOrders=curD.map(()=>0);
   for(const o of ordersIn(curSet)){if(o.status==='cancelled'||o.status==='returned')continue;const m=orderMatch(o);if(m.rev>0)dOrders[idx[o.date]]++;}
