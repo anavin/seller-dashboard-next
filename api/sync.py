@@ -117,7 +117,7 @@ def sb_delete_items(order_ids):
 
 
 # ---------- sync ----------
-def run_sync():
+def run_sync(force_days=None):
     app_key = os.environ["LZ_APP_KEY"]
     app_secret = os.environ["LZ_APP_SECRET"]
     now = datetime.datetime.now().astimezone()
@@ -127,7 +127,10 @@ def run_sync():
     rt = stored_rt or os.environ["LZ_REFRESH_TOKEN"]
     access, new_rt = _refresh(app_key, app_secret, rt)
     last = state[0]["last_sync_time"] if state and state[0].get("last_sync_time") else None
-    if last:
+    if force_days:
+        # backfill: ดึงย้อนหลังลึก ๆ (ข้าม last_sync) — สั่งด้วย /api/sync?pw=...&days=N
+        since = now - datetime.timedelta(days=int(force_days))
+    elif last:
         since = datetime.datetime.fromisoformat(last.replace("Z", "+00:00")) - datetime.timedelta(minutes=15)
     else:
         days = int(os.environ.get("INITIAL_SYNC_DAYS", "90"))
@@ -144,7 +147,7 @@ def run_sync():
         if len(batch) < 100:
             break
         offset += 100
-        if offset >= 5000:
+        if offset >= 20000:
             break
 
     # items แบบ batch
@@ -235,8 +238,9 @@ class handler(BaseHTTPRequestHandler):
         if not SB_URL or not SB_KEY:
             self._send(500, {"error": "ยังไม่ได้ตั้ง SUPABASE_URL / SUPABASE_SERVICE_KEY"})
             return
+        force_days = qs.get("days", [None])[0]
         try:
-            self._send(200, run_sync())
+            self._send(200, run_sync(force_days=force_days))
         except Exception as e:
             self._send(500, {"error": str(e)})
 

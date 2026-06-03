@@ -21,7 +21,7 @@ import requests
 
 LAZADA_BASE = "https://api.lazada.co.th/rest"
 AUTH_BASE = "https://auth.lazada.com/rest"
-LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "120"))
+LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "730"))
 SB_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SB_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
