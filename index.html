@@ -293,6 +293,7 @@
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-6"><div class="ctitle">เปรียบเทียบรายเดือน</div><div class="csub">ยอดขายรวมต่อเดือน</div><div class="chart-wrap sm"><canvas id="monthlyChart"></canvas></div></div>
         <div class="card c-6"><div class="ctitle">ยอดขายสะสม + AOV รายวัน</div><div class="csub">แท่ง=สะสม · เส้น=AOV/วัน</div><div class="chart-wrap sm"><canvas id="cumChart"></canvas></div></div>
+        <div class="card c-12"><div class="ctitle">รายได้แต่ละปี</div><div class="csub">ยอดขายรวมต่อปี (พ.ศ.) · ใช้ข้อมูลทั้งหมด</div><div class="chart-wrap sm"><canvas id="yearRevChart"></canvas></div></div>
       </div>
     </section>
 
@@ -736,28 +737,45 @@ function render(sync){
     datasets:[{data:pr.map(p=>daily[p].reduce((a,b)=>a+b,0)),backgroundColor:pr.map(p=>PLT[p].c),borderWidth:0}]},
     options:{maintainAspectRatio:false,cutout:'64%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
 
-  renderTrends(curD);   // กราฟภาพรวม (รายเดือน + สะสม) — แสดงทันที
-  // ส่วนที่เหลือ (อีก ~40 กราฟ) วาดแบบหน่วงเวลา เพื่อให้ภาพรวมโชว์เร็ว login ไม่ค้าง
-  const heavy=()=>{ try{
-    renderSales(curSet,curD);
-    renderProducts(curSet);
-    renderProductExtras(curSet);
-    renderProfit(curSet,s,net,netp,ad);
-    renderAds(curSet,curD,ad,adp,idx);
-    renderInventory(curSet,curD.length);
-    renderHeatmap(curSet);
-    renderDist(curSet);
-    renderPayment(curSet);
-    renderVoucher(curSet);
-    renderInsight();
-    renderFinance();
-    renderAdvanced();
-    renderCustomers();
-    renderReviews();
-  }catch(e){const m=document.getElementById('metaLine');if(m)m.textContent='⚠️ '+e.message;} };
-  if(sync){ heavy(); }
-  else { clearTimeout(window._heavyT); window._heavyT=setTimeout(heavy, 20); }
+  renderTrends(curD);   // ภาพรวม (รายเดือน + สะสม) — แสดงทันที
+  renderYearRev();      // รายได้แต่ละปี — แสดงทันที
+  // ---- โหลดเฉพาะเมนูที่เปิด (lazy ราย section) ----
+  RENDER_VER++;
+  CTX={curSet,curD,s,net,netp,ad,adp,idx};
+  if(sync){ for(const id in SECTION_FN) ensureSection(id); }
+  else { ensureSection(activeSection()); }
 }
+// รายได้แต่ละปี (ใช้ข้อมูลทั้งหมด ไม่ขึ้นกับช่วงที่เลือก)
+function renderYearRev(){
+  const yr={};
+  for(const o of (DATA.orders||[])){ if(o.platform!=='lazada'||o.status==='cancelled'||o.status==='returned')continue;
+    const y=(o.date||'').slice(0,4); if(!y)continue;
+    yr[y]=(yr[y]||0)+o.items.reduce((s,i)=>s+i.qty*i.price,0); }
+  const ys=Object.keys(yr).sort();
+  mk('yearRevChart',{type:'bar',data:{labels:ys.map(y=>+y+543),datasets:[{data:ys.map(y=>yr[y]),backgroundColor:cssvar('--accent'),borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)+' ฿'}}},scales:{y:{ticks:{callback:fmtK}}}}});
+}
+// ---- ระบบ lazy: วาดเฉพาะ section ที่เปิด ----
+let RENDER_VER=0, CTX=null; const secVer={};
+const SECTION_FN={
+  sales:    c=>{renderSales(c.curSet,c.curD);renderHeatmap(c.curSet);renderDist(c.curSet);renderPayment(c.curSet);renderVoucher(c.curSet);},
+  products: c=>{renderProducts(c.curSet);renderProductExtras(c.curSet);},
+  profit:   c=>renderProfit(c.curSet,c.s,c.net,c.netp,c.ad),
+  ads:      c=>renderAds(c.curSet,c.curD,c.ad,c.adp,c.idx),
+  inventory:c=>renderInventory(c.curSet,c.curD.length),
+  customers:()=>renderCustomers(),
+  reviews:  ()=>renderReviews(),
+  finance:  ()=>renderFinance(),
+  insight:  ()=>renderInsight(),
+  advanced: ()=>renderAdvanced(),
+};
+function ensureSection(id){
+  if(!id||!SECTION_FN[id]||!CTX)return;
+  if(secVer[id]===RENDER_VER)return;
+  try{ SECTION_FN[id](CTX); secVer[id]=RENDER_VER; }
+  catch(e){const m=document.getElementById('metaLine');if(m)m.textContent='⚠️ '+e.message;}
+}
+function activeSection(){const a=document.querySelector('#nav a.active');return a?a.dataset.sec:'';}
 // ---------- รีวิวสินค้า (ใช้ข้อมูลทั้งหมด) ----------
 function renderReviews(){
   const rv=DATA.reviews||[]; if(!rv.length)return;
@@ -1447,6 +1465,7 @@ const CHART_HELP=[
   ['แนวโน้มยอดขายรายวัน','ยอดขายรวมแต่ละวัน แยกสีตามช่องทาง พื้นที่ที่ซ้อนกันรวมเป็นยอดของวันนั้น'],
   ['สัดส่วนยอดขายตามช่องทาง','ส่วนแบ่งรายได้ของแต่ละแพลตฟอร์ม (ตอนนี้มีแต่ Lazada)'],
   ['เปรียบเทียบรายเดือน','ยอดขายรวมของแต่ละเดือน เทียบกันเป็นแท่ง'],
+  ['รายได้แต่ละปี','ยอดขายรวมต่อปี (พ.ศ.) — ดูภาพรวมการเติบโตทั้งร้านแบบรายปี ใช้ข้อมูลทั้งหมดไม่ขึ้นกับช่วงที่เลือก'],
   ['ยอดขายสะสม','เส้นสะสม = ยอดขายบวกพอกขึ้นเรื่อย ๆ · AOV/วัน = ยอดเฉลี่ยต่อออเดอร์ในวันนั้น'],
   ['สินค้าขายดี','10 อันดับสินค้าที่ทำรายได้สูงสุดในช่วงวันที่เลือก'],
   ['ยอดขายเฉลี่ยตามวันในสัปดาห์','เฉลี่ยยอดขายต่อวัน เทียบ 7 วัน · ส้ม = เสาร์-อาทิตย์'],
@@ -1612,9 +1631,17 @@ $('#catSel').onchange=e=>{state.category=e.target.value;render();};
 $('#prodSearch').oninput=drawProducts;
 $('#nav').onclick=e=>{const a=e.target.closest('a');if(!a)return;
   $('#nav').querySelectorAll('a').forEach(x=>x.classList.remove('active'));a.classList.add('active');
+  ensureSection(a.dataset.sec);   // วาด section นั้นก่อนเลื่อนไป (lazy)
   const sec=document.getElementById('sec-'+a.dataset.sec); if(sec)sec.scrollIntoView({behavior:'smooth',block:'start'});
   $('#sidebar').classList.remove('open');};
-// scrollspy: เลื่อนเนื้อหาถึงส่วนไหน ให้ไฮไลต์เมนูนั้นเอง
+// lazy: section ใกล้จะเข้าจอ (±300px) ให้วาดล่วงหน้า
+(function(){
+  const lz=new IntersectionObserver(entries=>{
+    entries.forEach(en=>{ if(en.isIntersecting) ensureSection(en.target.id.replace('sec-','')); });
+  },{rootMargin:'300px 0px 300px 0px',threshold:0});
+  document.querySelectorAll('.section').forEach(s=>lz.observe(s));
+})();
+// scrollspy: ไฮไลต์เมนูตาม section ที่อยู่กลางจอ
 (function(){
   const obs=new IntersectionObserver(entries=>{
     entries.forEach(en=>{ if(en.isIntersecting){
