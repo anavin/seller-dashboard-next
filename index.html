@@ -63,7 +63,17 @@
   .chip:not(.on) .dot{background:var(--soft)!important}
   select,.dateinput{padding:7px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);
     color:var(--txt);font-size:13px;cursor:pointer;font-family:inherit}
-  .dateinput{color-scheme:light}
+  .dateinput{color-scheme:light;min-width:118px}
+  .cal-pop{position:fixed;z-index:1000;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.18);padding:10px;display:none;width:236px}
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-weight:700;font-size:13px;color:var(--txt)}
+  .cal-nav{border:none;background:var(--panel2);border-radius:8px;width:26px;height:26px;cursor:pointer;font-size:15px;color:var(--txt)}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+  .cal-dow{text-align:center;font-size:10px;color:var(--soft);padding:2px 0}
+  .cal-day{text-align:center;padding:6px 0;border-radius:7px;font-size:12px;cursor:pointer;color:var(--txt)}
+  .cal-day:not(.empty):hover{background:var(--accent);color:#fff}
+  .cal-day.empty{color:var(--soft);opacity:.3;cursor:not-allowed}
+  .cal-day.sel{background:var(--accent);color:#fff;font-weight:700}
   .content{padding:22px 24px;display:flex;flex-direction:column;gap:26px}
   .section{scroll-margin-top:84px}
   .section h2{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:9px;color:var(--txt)}
@@ -213,9 +223,10 @@
         <span class="chip on lazada" data-plt="lazada"><span class="dot" style="background:var(--lazada)"></span>Lazada</span>
       </div>
       <select id="catSel"><option value="all">ทุกหมวดหมู่</option></select>
-      <input type="date" id="dFrom" class="dateinput" title="จากวันที่">
+      <input type="text" id="dFrom" class="dateinput" title="จากวันที่" placeholder="จากวันที่" readonly>
       <span style="color:var(--soft);font-size:13px">–</span>
-      <input type="date" id="dTo" class="dateinput" title="ถึงวันที่">
+      <input type="text" id="dTo" class="dateinput" title="ถึงวันที่" placeholder="ถึงวันที่" readonly>
+      <div id="calPop" class="cal-pop"></div>
       <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
     </div>
   </div>
@@ -837,7 +848,52 @@ function syncDateInputs(){const {curD}=getWindows(); $('#dFrom').value=curD[0]; 
 function onDateChange(){state.mode='custom'; state.from=$('#dFrom').value; state.to=$('#dTo').value;
   if(!state.from||!state.to)return;
   $('#winSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active')); render();}
-$('#dFrom').onchange=onDateChange; $('#dTo').onchange=onDateChange;
+// ---------- ปฏิทิน custom: วันที่ไม่มีข้อมูลจะเป็นสีเทา เลือกไม่ได้ ----------
+const DATE_SET=new Set();
+function buildDateSet(){DATE_SET.clear();(DATA.orders||[]).forEach(o=>{if(o.date)DATE_SET.add(o.date);});}
+const calState={input:null,y:0,m:0};
+function calISO(y,m,d){return y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');}
+function openCal(input){
+  calState.input=input;
+  const v=input.value||input.dataset.max||DATA.meta.end_date||'';
+  const base=v?new Date(v+'T00:00:00'):new Date();
+  calState.y=base.getFullYear(); calState.m=base.getMonth();
+  renderCal();
+  const pop=$('#calPop'), r=input.getBoundingClientRect();
+  pop.style.display='block';
+  pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-pop.offsetWidth-10))+'px';
+  pop.style.top=(r.bottom+6)+'px';
+}
+function closeCal(){const p=$('#calPop'); if(p)p.style.display='none'; calState.input=null;}
+function renderCal(){
+  const pop=$('#calPop'); if(!pop||!calState.input)return;
+  const y=calState.y,m=calState.m,min=DATA.meta.start_date,max=DATA.meta.end_date;
+  const MN=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const startDow=(new Date(y,m,1).getDay()+6)%7, days=new Date(y,m+1,0).getDate();
+  const cur=calState.input.value||'';
+  let h=`<div class="cal-head"><button type="button" class="cal-nav" data-nav="-1">‹</button>`
+    +`<span>${MN[m]} ${y+543}</span><button type="button" class="cal-nav" data-nav="1">›</button></div><div class="cal-grid">`;
+  for(const d of ['จ','อ','พ','พฤ','ศ','ส','อา'])h+=`<div class="cal-dow">${d}</div>`;
+  for(let i=0;i<startDow;i++)h+='<div></div>';
+  for(let d=1;d<=days;d++){
+    const iso=calISO(y,m,d), bad=(min&&iso<min)||(max&&iso>max)||!DATE_SET.has(iso);
+    let cls='cal-day'+(bad?' empty':'')+(iso===cur?' sel':'');
+    h+=`<div class="${cls}"${bad?'':` data-d="${iso}"`}>${d}</div>`;
+  }
+  pop.innerHTML=h+'</div>';
+}
+$('#calPop').addEventListener('click',e=>{
+  const nav=e.target.closest('.cal-nav');
+  if(nav){let m=calState.m+(+nav.dataset.nav),y=calState.y;
+    if(m<0){m=11;y--;}if(m>11){m=0;y++;}calState.m=m;calState.y=y;renderCal();return;}
+  const day=e.target.closest('.cal-day[data-d]');
+  if(day&&calState.input){calState.input.value=day.dataset.d;onDateChange();closeCal();}
+});
+$('#dFrom').onclick=()=>openCal($('#dFrom'));
+$('#dTo').onclick=()=>openCal($('#dTo'));
+document.addEventListener('click',e=>{
+  if(calState.input&&!e.target.closest('#calPop')&&e.target!==calState.input)closeCal();
+});
 function exportCSV(){
   const {curD}=getWindows(); const set=new Set(curD);
   const rows=[['วันที่','ช่องทาง','สถานะ','พื้นที่','SKU','สินค้า','จำนวน','ราคา/ชิ้น','รวม']];
@@ -891,10 +947,11 @@ function afterLoad(){
   }
   $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
     DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
-  // จำกัดช่วงปฏิทินให้เลือกได้เฉพาะวันที่มีข้อมูลจริง
+  // เซ็ตวันที่มีข้อมูลจริง (ใช้ระบายสีเทาในปฏิทิน) + จำกัดช่วง
+  buildDateSet();
   if(DATA.meta.start_date && DATA.meta.end_date){
     for(const el of [$('#dFrom'), $('#dTo')]){
-      el.min=DATA.meta.start_date; el.max=DATA.meta.end_date;
+      el.dataset.min=DATA.meta.start_date; el.dataset.max=DATA.meta.end_date;
     }
   }
   render();
