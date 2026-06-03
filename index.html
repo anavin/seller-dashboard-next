@@ -369,7 +369,7 @@
     <!-- INVENTORY -->
     <!-- CUSTOMERS / ลูกค้า — ใหม่ vs ซ้ำ (จากลายนิ้วมือที่อยู่) -->
     <section class="section" id="sec-customers">
-      <h2><span class="bar"></span>ลูกค้า — ใหม่ vs ซื้อซ้ำ <span class="hint">ประเมินจากที่อยู่จัดส่ง (โดยประมาณ) · ใช้ข้อมูลทั้งหมด</span></h2>
+      <h2><span class="bar"></span>ลูกค้า — ใหม่ vs ซื้อซ้ำ <span class="hint">ประเมินจากที่อยู่จัดส่ง (โดยประมาณ) · ตามช่วงที่เลือก</span></h2>
       <div class="grid kpis" id="custKpi"></div>
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-5"><div class="ctitle">ออเดอร์: ลูกค้าใหม่ vs ซ้ำ</div><div class="csub">สัดส่วนจำนวนออเดอร์</div><div class="chart-wrap sm"><canvas id="newReturnChart"></canvas></div></div>
@@ -384,7 +384,7 @@
 
     <!-- REVIEWS / รีวิวสินค้า -->
     <section class="section" id="sec-reviews">
-      <h2><span class="bar"></span>รีวิวสินค้า <span class="hint">จาก Lazada · ใช้ข้อมูลทั้งหมด</span></h2>
+      <h2><span class="bar"></span>รีวิวสินค้า <span class="hint">จาก Lazada · ตามช่วงที่เลือก</span></h2>
       <div class="grid kpis" id="reviewKpi"></div>
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-5"><div class="ctitle">การกระจายคะแนนดาว</div><div class="csub">1–5 ดาว</div><div class="chart-wrap sm"><canvas id="ratingDistChart"></canvas></div></div>
@@ -395,7 +395,7 @@
 
     <!-- FINANCE / การเงิน — ยอดโอนจริงจาก Lazada Finance -->
     <section class="section" id="sec-finance">
-      <h2><span class="bar"></span>การเงิน — ยอดโอนจริง <span class="hint">จาก Lazada Finance · ใช้ข้อมูลทั้งหมด</span></h2>
+      <h2><span class="bar"></span>การเงิน — ยอดโอนจริง <span class="hint">จาก Lazada Finance · ตามช่วงที่เลือก</span></h2>
       <div class="grid kpis" id="finKpi"></div>
       <div class="grid charts" style="margin-top:14px">
         <div class="card c-8"><div class="ctitle">ยอดขาย · ค่าธรรมเนียม · ยอดโอนสุทธิ</div><div class="csub">รายเดือน</div><div class="chart-wrap"><canvas id="finChart"></canvas></div></div>
@@ -586,6 +586,7 @@ function delta(cur,prev){
 
 // ---------- chart helpers ----------
 function mk(id,cfg){ if(charts[id])charts[id].destroy(); const el=document.getElementById(id); if(el)charts[id]=new Chart(el,cfg); }
+function clearCharts(ids){ ids.forEach(id=>{ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }); }
 function applyChartTheme(){Chart.defaults.color=cssvar('--muted');Chart.defaults.borderColor=cssvar('--line');
   Chart.defaults.font.family='Inter, Noto Sans Thai, sans-serif';}
 // ซ่อนการ์ด/ส่วนที่ไม่มีข้อมูล (ข้อมูลจริงบางมิติว่าง) ให้หน้าดูแน่นและโปร
@@ -765,9 +766,9 @@ const SECTION_FN={
   profit:   c=>renderProfit(c.curSet,c.s,c.net,c.netp,c.ad),
   ads:      c=>renderAds(c.curSet,c.curD,c.ad,c.adp,c.idx),
   inventory:c=>renderInventory(c.curSet,c.curD.length),
-  customers:()=>renderCustomers(),
-  reviews:  ()=>renderReviews(),
-  finance:  ()=>renderFinance(),
+  customers:c=>renderCustomers(c.curSet),
+  reviews:  c=>renderReviews(c.curD),
+  finance:  c=>renderFinance(c.curD),
   insight:  ()=>renderInsight(),
   advanced: ()=>renderAdvanced(),
 };
@@ -778,9 +779,13 @@ function ensureSection(id){
   catch(e){const m=document.getElementById('metaLine');if(m)m.textContent='⚠️ '+e.message;}
 }
 function activeSection(){const a=document.querySelector('#nav a.active');return a?a.dataset.sec:'';}
-// ---------- รีวิวสินค้า (ใช้ข้อมูลทั้งหมด) ----------
-function renderReviews(){
-  const rv=DATA.reviews||[]; if(!rv.length)return;
+// ---------- รีวิวสินค้า — ตามช่วงที่เลือก ----------
+function renderReviews(curD){
+  const from=curD[0], to=curD[curD.length-1];
+  const rv=(DATA.reviews||[]).filter(r=>{const t=(r.time||'').slice(0,10); return t?(t>=from&&t<=to):true;});
+  if(!rv.length){ clearCharts(['ratingDistChart']);
+    $('#reviewKpi').innerHTML='<div class="muted" style="padding:10px">ไม่มีรีวิวในช่วงที่เลือก</div>';
+    ['reviewLowTable','reviewBadTable'].forEach(id=>{const e=$('#'+id); if(e)e.innerHTML='';}); return; }
   const n=rv.length, avg=rv.reduce((s,r)=>s+(r.rating||0),0)/n;
   const good=rv.filter(r=>r.rating>=4).length, replied=rv.filter(r=>r.reply).length;
   $('#reviewKpi').innerHTML=
@@ -851,10 +856,12 @@ function renderVoucher(curSet){
       scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{callback:fmtK}}}}});
   toggleCard('voucherUseChart',any);toggleCard('voucherAovChart',any);toggleCard('voucherMonChart',any);
 }
-// ---------- ลูกค้า: ใหม่ vs ซื้อซ้ำ (จากลายนิ้วมือที่อยู่) ----------
-function renderCustomers(){
-  const wk=DATA.orders.filter(o=>o.platform==='lazada'&&o.status!=='cancelled'&&o.status!=='returned'&&o.buyer);
-  if(!wk.length)return;
+// ---------- ลูกค้า: ใหม่ vs ซื้อซ้ำ (จากลายนิ้วมือที่อยู่) — ตามช่วงที่เลือก ----------
+function renderCustomers(curSet){
+  const wk=ordersIn(curSet).filter(o=>o.status!=='cancelled'&&o.status!=='returned'&&o.buyer);
+  if(!wk.length){ clearCharts(['newReturnChart','freqChart','custTrendChart','custRevChart','custAovChart','custGapChart']);
+    $('#custKpi').innerHTML='<div class="muted" style="padding:10px">ไม่มีข้อมูลลูกค้าในช่วงที่เลือก</div>';
+    const t=$('#custTable'); if(t)t.innerHTML=''; return; }
   const accent=cssvar('--accent'); const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
   const sorted=[...wk].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const seen=new Set(); let newOrd=0,retOrd=0,newRev=0,retRev=0; const byMonth={}, buyer={};
@@ -998,9 +1005,14 @@ function renderAdvanced(){
     kpiCard('อัตรายกเลิก/คืนรวม',(totCan/totAll*100).toFixed(1)+'%')+
     kpiCard('สัดส่วนยอด กทม.',((bRev+pRev)?bRev/(bRev+pRev)*100:0).toFixed(0)+'%');
 }
-// ---------- การเงิน: ยอดโอนจริงจาก Lazada (ใช้ข้อมูลทั้งหมด) ----------
-function renderFinance(){
-  const fin=DATA.finance||[]; if(!fin.length)return;
+// ---------- การเงิน: ยอดโอนจริงจาก Lazada — ตามช่วงที่เลือก ----------
+function renderFinance(curD){
+  const from=curD[0], to=curD[curD.length-1];
+  const inWin=d=>{const x=(d||'').slice(0,10); return x?(x>=from&&x<=to):false;};
+  const fin=(DATA.finance||[]).filter(s=>inWin(s.date));
+  if(!fin.length){ clearCharts(['finChart','feeRateChart','settleVsOrderChart']);
+    $('#finKpi').innerHTML='<div class="muted" style="padding:10px">ไม่มีข้อมูลการเงินในช่วงที่เลือก</div>';
+    const t=$('#finTable'); if(t)t.innerHTML=''; return; }
   const accent=cssvar('--accent');
   const m={};
   for(const s of fin){const k=(s.date||'').slice(0,7); if(!k)continue;
@@ -1027,6 +1039,7 @@ function renderFinance(){
   // ยอดสั่งซื้อ (จากออเดอร์) vs ยอด settle จริง (จากการเงิน) รายเดือน
   const ordM={};
   for(const o of (DATA.orders||[])){ if(o.platform!=='lazada'||o.status==='cancelled'||o.status==='returned')continue;
+    if(!inWin(o.date))continue;
     const k=(o.date||'').slice(0,7); if(!k)continue; ordM[k]=(ordM[k]||0)+o.items.reduce((s,i)=>s+i.qty*i.price,0); }
   const allM=[...new Set([...Object.keys(ordM),...mks])].sort();
   mk('settleVsOrderChart',{type:'bar',data:{labels:allM,datasets:[
