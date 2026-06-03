@@ -202,6 +202,10 @@
         <button data-win="14">14 วัน</button>
         <button data-win="30" class="active">30 วัน</button>
         <button data-win="60">60 วัน</button>
+        <button data-win="90">90 วัน</button>
+        <button data-win="180">180 วัน</button>
+        <button data-win="365">1 ปี</button>
+        <button data-win="all">ทั้งหมด</button>
       </div>
       <div class="chips" id="pltChips">
         <span class="chip on tiktok" data-plt="tiktok"><span class="dot" style="background:var(--tiktok)"></span>TikTok</span>
@@ -821,7 +825,13 @@ function renderInventory(curSet, windowDays){
 // ---------- events ----------
 $('#winSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   $('#winSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); state.win=+b.dataset.win; state.mode='preset'; render(); syncDateInputs();};
+  b.classList.add('active');
+  if(b.dataset.win==='all'){
+    state.mode='custom'; state.from=DATA.meta.start_date; state.to=DATA.meta.end_date;
+  }else{
+    state.win=+b.dataset.win; state.mode='preset';
+  }
+  render(); syncDateInputs();};
 function syncDateInputs(){const {curD}=getWindows(); $('#dFrom').value=curD[0]; $('#dTo').value=curD[curD.length-1];}
 function onDateChange(){state.mode='custom'; state.from=$('#dFrom').value; state.to=$('#dTo').value;
   if(!state.from||!state.to)return;
