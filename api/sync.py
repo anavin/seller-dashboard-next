@@ -15,6 +15,7 @@ import time
 import hmac
 import hashlib
 import datetime
+import calendar
 import urllib.parse
 
 import requests
@@ -116,55 +117,13 @@ def sb_delete_items(order_ids):
         r.raise_for_status()
 
 
-# ---------- sync ----------
-def run_sync(force_days=None, from_date=None, to_date=None):
-    app_key = os.environ["LZ_APP_KEY"]
-    app_secret = os.environ["LZ_APP_SECRET"]
-    now = datetime.datetime.now().astimezone()
-    backfill = bool(force_days or from_date or to_date)
-    # อ่านสถานะล่าสุด + refresh_token ที่เก็บไว้ (กัน token หมดอายุ — ต่ออายุเองทุกครั้ง)
-    state = sb_get("lz_sync", "id=eq.1&select=last_sync_time,refresh_token")
-    stored_rt = state[0].get("refresh_token") if state else None
-    rt = stored_rt or os.environ["LZ_REFRESH_TOKEN"]
-    access, new_rt = _refresh(app_key, app_secret, rt)
-    last = state[0]["last_sync_time"] if state and state[0].get("last_sync_time") else None
-
-    def _iso(dstr, end=False):
-        d = datetime.datetime.fromisoformat(dstr)
-        if d.tzinfo is None:
-            d = d.replace(tzinfo=now.tzinfo)
-        if end:
-            d = d.replace(hour=23, minute=59, second=59)
-        return d.replace(microsecond=0).isoformat()
-
-    # โหมด backfill = ดึงตาม "วันที่สร้างออเดอร์" (created window) ซอยเป็นก้อนได้ กัน timeout
-    # โหมดปกติ = ดึงตาม update_after (incremental)
-    created_after = created_before = since_iso = None
-    if from_date:
-        created_after = _iso(from_date)
-        created_before = _iso(to_date, end=True) if to_date else None
-        win_label = "created %s..%s" % (from_date, to_date or "now")
-    elif force_days:
-        created_after = (now - datetime.timedelta(days=int(force_days))).replace(microsecond=0).isoformat()
-        win_label = "created last %sd" % force_days
-    else:
-        if last:
-            since = datetime.datetime.fromisoformat(last.replace("Z", "+00:00")) - datetime.timedelta(minutes=15)
-        else:
-            since = now - datetime.timedelta(days=int(os.environ.get("INITIAL_SYNC_DAYS", "90")))
-        since_iso = since.replace(microsecond=0).isoformat()
-        win_label = "update_after %s" % since_iso
-
-    # ดึงออเดอร์
+# ---------- sync helpers ----------
+def _fetch_orders(access, app_key, app_secret, q_filter):
+    """ดึงออเดอร์ตามเงื่อนไข (created window หรือ update_after) แบบแบ่งหน้า"""
     raw, offset = [], 0
     while True:
         q = {"limit": 100, "offset": offset, "sort_direction": "DESC"}
-        if backfill:
-            q["created_after"] = created_after
-            if created_before:
-                q["created_before"] = created_before
-        else:
-            q["update_after"] = since_iso
+        q.update(q_filter)
         d = _lz("/orders/get", app_key, app_secret, access, q)
         batch = d.get("data", {}).get("orders", [])
         raw += batch
@@ -173,53 +132,20 @@ def run_sync(force_days=None, from_date=None, to_date=None):
         offset += 100
         if offset >= 20000:
             break
+    return raw
 
-    # items แบบ batch
+
+def _fetch_items(access, app_key, app_secret, ids):
     items_by = {}
-    ids = [str(o.get("order_id")) for o in raw]
     for i in range(0, len(ids), 50):
         d = _lz("/orders/items/get", app_key, app_secret, access,
                 {"order_ids": json.dumps(ids[i:i + 50])})
         for od in d.get("data", []):
             items_by[str(od.get("order_id"))] = od.get("order_items", [])
+    return items_by
 
-    sku_cat, prod_rows = {}, {}
-    if backfill:
-        # ไม่ดึง products ใหม่ (กัน timeout) — ใช้หมวดหมู่ของ SKU จากที่มีอยู่ใน DB แล้ว
-        try:
-            for r in sb_get("lz_products", "select=sku,category&limit=10000"):
-                if r.get("sku"):
-                    sku_cat[r["sku"]] = r.get("category") or ""
-        except Exception:
-            pass
-    else:
-        # sync ปกติ: ดึง products (เต็ม) + แผนที่หมวดหมู่
-        idn = _category_map(app_key, app_secret, access)
-        offset = 0
-        while True:
-            d = _lz("/products/get", app_key, app_secret, access, {"limit": 50, "offset": offset, "filter": "all"})
-            batch = d.get("data", {}).get("products", [])
-            if not batch:
-                break
-            for p in batch:
-                nm = (p.get("attributes") or {}).get("name", "")
-                pcat = idn.get(str(p.get("primary_category") or ""), "")
-                for sk in p.get("skus", [{}]):
-                    sku = sk.get("SellerSku") or sk.get("ShopSku", "")
-                    if not sku:
-                        continue
-                    prod_rows[sku] = {"sku": sku, "name": nm, "category": pcat,
-                                      "price": float(sk.get("price", 0) or 0), "cost": 0.0,
-                                      "stock_lazada": int(sk.get("quantity", 0) or 0)}
-                    if pcat:
-                        sku_cat[sku] = pcat
-            if len(batch) < 50:
-                break
-            offset += 50
-            if offset >= 5000:
-                break
 
-    # เตรียม rows สำหรับ DB
+def _build_rows(raw, items_by, sku_cat):
     order_rows, item_rows = [], []
     for o in raw:
         oid = str(o.get("order_id"))
@@ -243,24 +169,118 @@ def run_sync(force_days=None, from_date=None, to_date=None):
                 "name": it.get("name", ""), "category": sku_cat.get(sku, ""),
                 "qty": 1, "price": float(it.get("paid_price") or it.get("item_price") or 0), "cost": 0.0,
             })
+    return order_rows, item_rows
 
-    # เขียนลง DB
+
+def _write_orders(order_rows, item_rows):
     if order_rows:
         sb_upsert("lz_orders", order_rows, "order_id")
         sb_delete_items([r["order_id"] for r in order_rows])
         sb_upsert("lz_order_items", item_rows, "order_id,line")
+
+
+def _month_windows(start, end):
+    """แตกช่วง [start, end] เป็นก้อนรายเดือน (clamp ที่ขอบ) เพื่อ commit ทีละเดือน"""
+    out, cur = [], start.replace(day=1)
+    while cur <= end:
+        last = calendar.monthrange(cur.year, cur.month)[1]
+        out.append((max(start, cur), min(end, cur.replace(day=last))))
+        cur = cur.replace(day=last) + datetime.timedelta(days=1)
+    return out
+
+
+# ---------- sync ----------
+def run_sync(force_days=None, from_date=None, to_date=None):
+    app_key = os.environ["LZ_APP_KEY"]
+    app_secret = os.environ["LZ_APP_SECRET"]
+    now = datetime.datetime.now().astimezone()
+    backfill = bool(force_days or from_date or to_date)
+    # อ่านสถานะล่าสุด + refresh_token ที่เก็บไว้ (กัน token หมดอายุ — ต่ออายุเองทุกครั้ง)
+    state = sb_get("lz_sync", "id=eq.1&select=last_sync_time,refresh_token")
+    stored_rt = state[0].get("refresh_token") if state else None
+    rt = stored_rt or os.environ["LZ_REFRESH_TOKEN"]
+    access, new_rt = _refresh(app_key, app_secret, rt)
+    last = state[0]["last_sync_time"] if state and state[0].get("last_sync_time") else None
+
+    def _isod(d, end=False):
+        t = datetime.time(23, 59, 59) if end else datetime.time(0, 0, 0)
+        return datetime.datetime.combine(d, t).replace(tzinfo=now.tzinfo).isoformat()
+
+    if backfill:
+        # ดึงตาม "วันที่สร้างออเดอร์" ทีละเดือน + commit ทุกเดือน (timeout ก็ไม่เสียของเก่า)
+        if from_date:
+            start = datetime.date.fromisoformat(from_date)
+        else:
+            start = (now - datetime.timedelta(days=int(force_days))).date()
+        end = datetime.date.fromisoformat(to_date) if to_date else now.date()
+        # หมวดหมู่ของ SKU จากที่มีใน DB (ไม่ดึง products ใหม่ กัน timeout)
+        sku_cat = {}
+        try:
+            for r in sb_get("lz_products", "select=sku,category&limit=10000"):
+                if r.get("sku"):
+                    sku_cat[r["sku"]] = r.get("category") or ""
+        except Exception:
+            pass
+        months, total_o, total_i = [], 0, 0
+        for ws, we in _month_windows(start, end):
+            raw = _fetch_orders(access, app_key, app_secret,
+                                {"created_after": _isod(ws), "created_before": _isod(we, end=True)})
+            items_by = _fetch_items(access, app_key, app_secret, [str(o.get("order_id")) for o in raw])
+            orows, irows = _build_rows(raw, items_by, sku_cat)
+            _write_orders(orows, irows)  # commit ทันทีต่อเดือน
+            total_o += len(orows)
+            total_i += len(irows)
+            months.append({"month": ws.strftime("%Y-%m"), "orders": len(orows)})
+        # backfill ไม่ขยับ last_sync_time — อัปเดตแค่ token
+        sb_upsert("lz_sync", [{"id": 1, "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
+        return {"ok": True, "synced_orders": total_o, "items": total_i, "backfill": True,
+                "window": "%s..%s" % (start.isoformat(), end.isoformat()), "months": months}
+
+    # ---------- sync ปกติ (incremental) ----------
+    if last:
+        since = datetime.datetime.fromisoformat(last.replace("Z", "+00:00")) - datetime.timedelta(minutes=15)
+    else:
+        since = now - datetime.timedelta(days=int(os.environ.get("INITIAL_SYNC_DAYS", "90")))
+    since_iso = since.replace(microsecond=0).isoformat()
+
+    raw = _fetch_orders(access, app_key, app_secret, {"update_after": since_iso})
+    items_by = _fetch_items(access, app_key, app_secret, [str(o.get("order_id")) for o in raw])
+
+    # ดึง products (เต็ม) + แผนที่หมวดหมู่
+    sku_cat, prod_rows = {}, {}
+    idn = _category_map(app_key, app_secret, access)
+    offset = 0
+    while True:
+        d = _lz("/products/get", app_key, app_secret, access, {"limit": 50, "offset": offset, "filter": "all"})
+        batch = d.get("data", {}).get("products", [])
+        if not batch:
+            break
+        for p in batch:
+            nm = (p.get("attributes") or {}).get("name", "")
+            pcat = idn.get(str(p.get("primary_category") or ""), "")
+            for sk in p.get("skus", [{}]):
+                sku = sk.get("SellerSku") or sk.get("ShopSku", "")
+                if not sku:
+                    continue
+                prod_rows[sku] = {"sku": sku, "name": nm, "category": pcat,
+                                  "price": float(sk.get("price", 0) or 0), "cost": 0.0,
+                                  "stock_lazada": int(sk.get("quantity", 0) or 0)}
+                if pcat:
+                    sku_cat[sku] = pcat
+        if len(batch) < 50:
+            break
+        offset += 50
+        if offset >= 5000:
+            break
+
+    order_rows, item_rows = _build_rows(raw, items_by, sku_cat)
+    _write_orders(order_rows, item_rows)
     if prod_rows:
         sb_upsert("lz_products", list(prod_rows.values()), "sku")
-
-    # backfill ไม่ขยับ last_sync_time (กันรบกวน incremental รายวัน) — อัปเดตแค่ token
-    if backfill:
-        sb_upsert("lz_sync", [{"id": 1, "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
-    else:
-        sb_upsert("lz_sync", [{"id": 1, "last_sync_time": now.isoformat(),
-                               "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
-
+    sb_upsert("lz_sync", [{"id": 1, "last_sync_time": now.isoformat(),
+                           "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
     return {"ok": True, "synced_orders": len(order_rows), "items": len(item_rows),
-            "products": len(prod_rows), "window": win_label, "backfill": backfill}
+            "products": len(prod_rows), "window": "update_after %s" % since_iso, "backfill": False}
 
 
 class handler(BaseHTTPRequestHandler):
