@@ -882,6 +882,12 @@ $('#themeBtn').onclick=()=>setTheme(document.documentElement.dataset.theme==='da
 try{const t=localStorage.getItem('theme');if(t)setTheme(t);}catch(e){}
 
 function afterLoad(){
+  // ปรับสถานะให้ตรงกับที่ Lazada ส่งมา (canceled = 1 L, refund ฯลฯ) ก่อนคำนวณทุกกราฟ
+  for(const o of (DATA.orders||[])){
+    const st=String(o.status||'').toLowerCase();
+    if(st==='canceled'||st==='cancel'||st==='cancelled'||st==='failed') o.status='cancelled';
+    else if(st==='returned'||st==='return'||st==='refund'||st==='refunded') o.status='returned';
+  }
   $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
     DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
   // เติมรายการวันที่ลง dropdown เลือกช่วงเอง (เชื่อถือได้กว่าปฏิทินระบบ)
