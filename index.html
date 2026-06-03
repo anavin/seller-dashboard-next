@@ -112,6 +112,14 @@
   .card .ctitle{font-size:13px;font-weight:600;margin-bottom:4px}
   .card .csub{font-size:11px;color:var(--soft);margin-bottom:10px}
   .chart-wrap{position:relative;height:280px}
+  .modal-lg{max-width:920px}
+  #chartModalBody{height:62vh;position:relative}
+  .expand-btn{position:absolute;top:10px;right:10px;width:26px;height:26px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--soft);border-radius:8px;cursor:pointer;font-size:13px;line-height:1;
+    display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;z-index:3}
+  .card:hover .expand-btn{opacity:1}
+  .expand-btn:hover{color:var(--accent);border-color:var(--accent)}
+  @media(hover:none){.expand-btn{opacity:.7}}
   .chart-wrap.sm{height:230px}
   canvas{max-width:100%}
   /* ---------- Table ---------- */
@@ -329,6 +337,13 @@
   <div class="modal">
     <div class="modal-head"><span id="kpiModalTitle"></span><button class="x" id="kpiModalClose">✕</button></div>
     <div class="modal-body" id="kpiModalBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="chartModal">
+  <div class="modal modal-lg">
+    <div class="modal-head"><span id="chartModalTitle"></span><button class="x" id="chartModalClose">✕</button></div>
+    <div class="modal-body"><div id="chartModalBody"></div></div>
   </div>
 </div>
 
@@ -912,6 +927,38 @@ $('#exportBtn').onclick=exportCSV;
 $('#kpiGrid').onclick=e=>{const c=e.target.closest('[data-kpi]'); if(c)openKpiDetail(c.dataset.kpi);};
 $('#kpiModalClose').onclick=()=>$('#kpiModal').style.display='none';
 $('#kpiModal').onclick=e=>{if(e.target.id==='kpiModal')$('#kpiModal').style.display='none';};
+// ---------- ขยายกราฟดูแบบเต็มจอ ----------
+let chartReturn=null;
+function addExpandButtons(){
+  document.querySelectorAll('.content .card').forEach(card=>{
+    if(card.querySelector(':scope > .expand-btn'))return;
+    const target=card.querySelector('canvas, .ranklist, #heatmap');
+    if(!target||!target.id)return;
+    const title=(card.querySelector('.ctitle')||{}).textContent||'กราฟ';
+    const btn=document.createElement('button');
+    btn.className='expand-btn'; btn.title='ดูแบบเต็ม'; btn.textContent='⤢';
+    btn.onclick=ev=>{ev.stopPropagation();openChart(target.id,title);};
+    if(getComputedStyle(card).position==='static')card.style.position='relative';
+    card.appendChild(btn);
+  });
+}
+function openChart(id,title){
+  const el=document.getElementById(id); if(!el)return;
+  $('#chartModalTitle').textContent=title;
+  chartReturn={el,parent:el.parentNode,next:el.nextSibling};
+  const body=$('#chartModalBody'); body.innerHTML=''; body.appendChild(el);
+  $('#chartModal').style.display='flex';
+  if(charts[id])requestAnimationFrame(()=>{try{charts[id].resize();}catch(e){}});
+}
+function closeChart(){
+  if(chartReturn){const {el,parent,next}=chartReturn;
+    if(next&&next.parentNode===parent)parent.insertBefore(el,next); else parent.appendChild(el);
+    if(charts[el.id])requestAnimationFrame(()=>{try{charts[el.id].resize();}catch(e){}});
+    chartReturn=null;}
+  $('#chartModal').style.display='none';
+}
+$('#chartModalClose').onclick=closeChart;
+$('#chartModal').onclick=e=>{if(e.target.id==='chartModal')closeChart();};
 $('#pltChips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
   const p=c.dataset.plt;
   if(state.platforms.has(p)&&state.platforms.size>1){state.platforms.delete(p);c.classList.remove('on');}
@@ -959,6 +1006,7 @@ function afterLoad(){
   }
   render();
   syncDateInputs();
+  addExpandButtons();
 }
 // ---------- login + ดึงข้อมูลสดจาก /api/data ----------
 function showLogin(){$('#loginOverlay').style.display='flex';$('#logoutBtn').style.display='flex';
