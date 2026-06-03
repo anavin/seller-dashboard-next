@@ -114,6 +114,7 @@
   .chart-wrap{position:relative;height:280px}
   .modal-lg{max-width:1240px;width:94vw;max-height:94vh}
   #chartModalBody{height:80vh;position:relative;overflow:auto}
+  #chartModalBody>canvas{width:100%!important;height:100%!important;display:block}
   .expand-btn{position:absolute;top:10px;right:10px;width:26px;height:26px;border:1px solid var(--line);
     background:var(--panel2);color:var(--soft);border-radius:8px;cursor:pointer;font-size:13px;line-height:1;
     display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;z-index:3}
@@ -1499,7 +1500,9 @@ function openChart(id,title){
   chartReturn={el,parent:el.parentNode,next:el.nextSibling};
   const body=$('#chartModalBody'); body.innerHTML=''; body.appendChild(el);
   $('#chartModal').style.display='flex';
-  if(charts[id])requestAnimationFrame(()=>{try{charts[id].resize();}catch(e){}});
+  const doResize=()=>{ if(charts[id]){try{charts[id].resize();charts[id].update('none');}catch(e){}} };
+  requestAnimationFrame(()=>requestAnimationFrame(doResize));
+  setTimeout(doResize,150);
 }
 function closeChart(){
   if(chartReturn){const {el,parent,next}=chartReturn;
