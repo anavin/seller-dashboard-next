@@ -120,6 +120,12 @@
   .card:hover .expand-btn{opacity:1}
   .expand-btn:hover{color:var(--accent);border-color:var(--accent)}
   @media(hover:none){.expand-btn{opacity:.7}}
+  .info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
+    border:1px solid var(--line);color:var(--soft);font-size:10px;font-weight:700;margin-left:6px;cursor:help;vertical-align:middle}
+  .info:hover{color:var(--accent);border-color:var(--accent)}
+  #tipBox{position:fixed;display:none;max-width:250px;background:var(--panel);color:var(--txt);
+    border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:11.5px;font-weight:400;
+    line-height:1.55;box-shadow:var(--shadow-lg);z-index:2000;pointer-events:none}
   .chart-wrap.sm{height:230px}
   canvas{max-width:100%}
   /* ---------- Table ---------- */
@@ -371,6 +377,11 @@ const fmt=n=>Math.round(n).toLocaleString('th-TH');
 const fmt2=n=>Number(n).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtK=n=>Math.abs(n)>=1e6?(n/1e6).toFixed(1)+'M':Math.abs(n)>=1e3?(n/1e3).toFixed(1)+'k':Math.round(n);
 const THMON=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+// สีประจำหมวดหมู่ — คงที่ ใช้เหมือนกันทุกกราฟ
+const CAT_PALETTE=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4','#ec4899','#14b8a6','#f97316','#64748b'];
+let CAT_COLORS={};
+function buildCatColors(){CAT_COLORS={};(DATA&&DATA.meta&&DATA.meta.categories||[]).forEach((c,i)=>{CAT_COLORS[c]=CAT_PALETTE[i%CAT_PALETTE.length];});}
+function catColor(c){return CAT_COLORS[c]||'#94a3b8';}
 // จัดรูปแบบป้ายแกนวันที่ให้อ่านง่าย: ช่วงสั้น=วัน/เดือน, ช่วงยาว=เดือน ปีพ.ศ.(2หลัก)
 function dateTick(iso,total){
   if(!iso)return ''; const p=(''+iso).split('-'); if(p.length<3)return iso;
@@ -627,7 +638,7 @@ function renderInsight(){
   const mi=Object.fromEntries(monthsSet.map((m,i)=>[m,i]));
   const cbm={}; cats.forEach(c=>cbm[c]=monthsSet.map(()=>0));
   for(const o of valid){const k=mi[o.date.slice(0,7)];for(const it of o.items)if(cbm[it.category]!==undefined)cbm[it.category][k]+=it.qty*it.price;}
-  mk('catTimeChart',{type:'bar',data:{labels:monthsSet,datasets:cats.map((c,i)=>({label:c,data:cbm[c],backgroundColor:pal[i%pal.length]}))},
+  mk('catTimeChart',{type:'bar',data:{labels:monthsSet,datasets:cats.map(c=>({label:c,data:cbm[c],backgroundColor:catColor(c)}))},
     options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
       scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{callback:fmtK}}}}});
   // 4) มาแรง/ขาตก (90 วันล่าสุด vs ก่อนหน้า)
@@ -818,7 +829,7 @@ function renderProfit(curSet,s,net,netp,ad){
   for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
     for(const i of o.items){ if(cat[i.category]!==undefined)cat[i.category]+=i.qty*(i.price-i.cost);}}
   const cs=Object.keys(cat);
-  mk('profitCatChart',{type:'bar',data:{labels:cs,datasets:[{data:cs.map(c=>cat[c]),backgroundColor:'#10b981',borderRadius:6}]},
+  mk('profitCatChart',{type:'bar',data:{labels:cs,datasets:[{data:cs.map(c=>cat[c]),backgroundColor:cs.map(c=>catColor(c)),borderRadius:6}]},
     options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:fmtK}}}}});
   const catProfitTotal=cs.reduce((a,c)=>a+Math.abs(cat[c]),0);
   toggleCard('profitCatChart', cs.length>0 && catProfitTotal>0);
@@ -873,7 +884,7 @@ function renderProductExtras(curSet){
   for(const o of valid)for(const i of o.items){ if(!i.category)continue; catRev[i.category]=(catRev[i.category]||0)+i.qty*i.price; }
   const ck=Object.keys(catRev).sort((a,b)=>catRev[b]-catRev[a]);
   if(ck.length) mk('prodCatChart',{type:'doughnut',data:{labels:ck,datasets:[{data:ck.map(c=>catRev[c]),
-    backgroundColor:ck.map((_,i)=>palette[i%palette.length]),borderWidth:0}]},
+    backgroundColor:ck.map(c=>catColor(c)),borderWidth:0}]},
     options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
   toggleCard('prodCatChart', ck.length>0);
   // Pareto
@@ -1007,6 +1018,56 @@ function exportCSV(){
   a.download=`seller-data-${curD[0]}_${curD[curD.length-1]}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 $('#exportBtn').onclick=exportCSV;
+// ---------- คำอธิบายกราฟ + ตัวย่อ (เอาเมาส์วางที่ ⓘ) ----------
+const CHART_HELP=[
+  ['แนวโน้มยอดขายรายวัน','ยอดขายรวมแต่ละวัน แยกสีตามช่องทาง พื้นที่ที่ซ้อนกันรวมเป็นยอดของวันนั้น'],
+  ['สัดส่วนยอดขายตามช่องทาง','ส่วนแบ่งรายได้ของแต่ละแพลตฟอร์ม (ตอนนี้มีแต่ Lazada)'],
+  ['เปรียบเทียบรายเดือน','ยอดขายรวมของแต่ละเดือน เทียบกันเป็นแท่ง'],
+  ['ยอดขายสะสม','เส้นสะสม = ยอดขายบวกพอกขึ้นเรื่อย ๆ · AOV/วัน = ยอดเฉลี่ยต่อออเดอร์ในวันนั้น'],
+  ['สินค้าขายดี','10 อันดับสินค้าที่ทำรายได้สูงสุดในช่วงวันที่เลือก'],
+  ['ยอดขายเฉลี่ยตามวันในสัปดาห์','เฉลี่ยยอดขายต่อวัน เทียบ 7 วัน · ส้ม = เสาร์-อาทิตย์'],
+  ['ออเดอร์ตามช่วงเวลาของวัน','ชั่วโมงไหน (0–23 น.) ที่ลูกค้าสั่งซื้อมากที่สุด ไว้ตั้งเวลายิงโฆษณา/โพสต์'],
+  ['ยอดขายตามพื้นที่','เขต/อำเภอที่ขายดีที่สุด 10 อันดับ'],
+  ['สถานะออเดอร์','สัดส่วนออเดอร์ สำเร็จ เทียบกับ ยกเลิก/คืนสินค้า'],
+  ['ค่าจัดส่ง','จำนวนออเดอร์ที่ส่งฟรี เทียบกับที่ลูกค้าเสียค่าส่ง'],
+  ['AOV รายเดือน','AOV (Average Order Value) = ยอดขาย ÷ จำนวนออเดอร์ = ค่าเฉลี่ยต่อบิล แต่ละเดือน'],
+  ['ช่วงเวลาทอง','ตารางความถี่ออเดอร์ แกนตั้ง = วันในสัปดาห์ แกนนอน = ชั่วโมง · สียิ่งเข้มยิ่งมีออเดอร์เยอะ'],
+  ['จำนวนชิ้นต่อออเดอร์','ออเดอร์ส่วนใหญ่ซื้อกี่ชิ้นต่อบิล'],
+  ['การกระจายมูลค่าออเดอร์','ออเดอร์ส่วนใหญ่มีมูลค่าอยู่ในช่วงราคาไหน'],
+  ['ยอดขายตามหมวดหมู่','สัดส่วนรายได้ของแต่ละหมวดสินค้า'],
+  ['Pareto','กฎ 20/80: สินค้าส่วนน้อยมักทำรายได้ส่วนใหญ่ · เส้น = ยอดสะสม % ถ้าพุ่งถึง 80% เร็ว = พึ่งสินค้าไม่กี่ตัว'],
+  ['โครงสร้างกำไร','Waterfall: ไล่จากยอดขาย แล้วหักต้นทุน-ค่าธรรมเนียม-ค่าโฆษณา ทีละขั้นจนเหลือกำไรสุทธิ'],
+  ['กำไรขั้นต้นตามหมวด','รายได้ − ต้นทุนสินค้า (COGS = Cost of Goods Sold) แยกตามหมวด'],
+  ['ค่าโฆษณา vs','เทียบเงินที่จ่ายค่าโฆษณา กับยอดขายที่ได้กลับมาจากโฆษณา'],
+  ['ROAS','ROAS (Return On Ad Spend) = ยอดขายจากโฆษณา ÷ ค่าโฆษณา · ยิ่งสูงยิ่งคุ้ม เป้าหมาย ≥ 3 เท่า'],
+  ['สต็อกอัจฉริยะ','"เหลือกี่วัน" = สต็อกคงเหลือ ÷ ความเร็วขาย (ชิ้น/วัน) · เรียงตัวใกล้หมดขึ้นก่อน ไว้เติมทัน'],
+  ['สินค้าใกล้หมด','สินค้าที่สต็อกรวมทุกแพลตฟอร์มเหลือน้อยกว่า 30 ชิ้น'],
+  ['เทียบยอดขายปีต่อปี','YoY (Year over Year) = เทียบเดือนเดียวกันคนละปี ดูว่าปีนี้โต/ตกจากปีก่อนแค่ไหน'],
+  ['ฤดูกาล','เฉลี่ยยอดขายของแต่ละเดือนข้ามทุกปี เพื่อหาว่าเดือนไหนเป็นพีค (เขียว) ไว้วางแผนสต็อก/แคมเปญ'],
+  ['สัดส่วนหมวดหมู่ตามเวลา','ยอดขายของแต่ละหมวดในแต่ละเดือน (ซ้อนกัน) เห็นว่าหมวดไหนกำลังมาแรงหรือแผ่ว'],
+  ['สินค้ามาแรง','เทียบยอดขายราย SKU ช่วง 90 วันล่าสุด กับ 90 วันก่อนหน้า · ตัวที่เพิ่มขึ้นมากสุด'],
+  ['สินค้าขาตก','สินค้าที่ยอดขายลดลงมากสุด (90 วันล่าสุด เทียบ 90 วันก่อน) ควรกระตุ้นหรือลดสต็อก'],
+  ['Dead stock','สินค้าที่ยังมีสต็อกแต่ไม่มียอดขายเลยใน 90 วันล่าสุด — เงินจม ควรจัดโปรระบาย'],
+  ['ซื้อคู่กันบ่อย','คู่สินค้าที่ลูกค้ามักซื้อพร้อมกันในออเดอร์เดียว ไว้จัดเซ็ต/บันเดิลเพิ่มยอดต่อบิล'],
+];
+function addChartHelp(){
+  document.querySelectorAll('.content .ctitle').forEach(t=>{
+    if(t.querySelector('.info'))return;
+    const txt=t.textContent;
+    const hit=CHART_HELP.find(h=>txt.includes(h[0]));
+    if(!hit)return;
+    const s=document.createElement('span'); s.className='info'; s.textContent='i'; s.dataset.tip=hit[1];
+    t.appendChild(s);
+  });
+}
+let tipBox=null;
+document.addEventListener('mouseover',e=>{const ic=e.target.closest('.info'); if(!ic)return;
+  if(!tipBox){tipBox=document.createElement('div'); tipBox.id='tipBox'; document.body.appendChild(tipBox);}
+  tipBox.textContent=ic.dataset.tip; tipBox.style.display='block';
+  const r=ic.getBoundingClientRect();
+  tipBox.style.left=Math.max(8,Math.min(r.left-8,window.innerWidth-tipBox.offsetWidth-10))+'px';
+  tipBox.style.top=(r.bottom+7)+'px';});
+document.addEventListener('mouseout',e=>{if(e.target.closest('.info')&&tipBox)tipBox.style.display='none';});
 // ---------- ดึงย้อนหลังทีละเดือนจากเบราว์เซอร์ (กัน timeout ฝั่ง server) ----------
 async function backfillAll(){
   const pw=(()=>{try{return sessionStorage.getItem('dpw');}catch(e){return null;}})();
@@ -1104,6 +1165,7 @@ function afterLoad(){
   }
   $('#catSel').innerHTML='<option value="all">ทุกหมวดหมู่</option>'+
     DATA.meta.categories.map(c=>`<option value="${c}">${c}</option>`).join('');
+  buildCatColors();   // สีประจำหมวด คงที่ทุกกราฟ
   // เซ็ตวันที่มีข้อมูลจริง (ใช้ระบายสีเทาในปฏิทิน) + จำกัดช่วง
   buildDateSet();
   if(DATA.meta.start_date && DATA.meta.end_date){
@@ -1114,6 +1176,7 @@ function afterLoad(){
   render();
   syncDateInputs();
   addExpandButtons();
+  addChartHelp();
 }
 // ---------- login + ดึงข้อมูลสดจาก /api/data ----------
 function showLogin(){$('#loginOverlay').style.display='flex';$('#logoutBtn').style.display='flex';
