@@ -244,14 +244,18 @@ def api_probe():
                 item_ids.append(iid)
     except Exception:
         item_ids = []
+    d7 = (now - datetime.timedelta(days=7)).date().isoformat()
+    today = now.date().isoformat()
+    dr = {"start_date": d7, "end_date": today, "limit": 5, "offset": 0}
     cands = [
-        ("รีวิว: list v2 (50 สินค้า)", "/review/seller/list/v2",
-         {"id_list": json.dumps(item_ids[:50])}),
-        ("รีวิว: list v2 (review_type=all)", "/review/seller/list/v2",
-         {"id_list": json.dumps(item_ids[:50]), "review_type": "all"}),
-        ("รีวิว: history (item แรก)", "/review/seller/history/list",
-         {"item_id": item_ids[0] if item_ids else 0, "start_time": ms_a, "end_time": ms_b, "current": 1, "page_size": 20}),
-        ("ออเดอร์รายตัว (มี voucher)", "/order/get", ({"order_id": oid} if oid else {})),
+        ("ads: sponsor campaign list", "/sponsor/solutions/campaign/list", dr),
+        ("ads: marketing campaign list", "/marketing/campaign/list", dr),
+        ("ads: sponsor campaign get", "/sponsor/campaign/list", dr),
+        ("ads: sponsoredsearch campaign", "/sponsoredsearch/campaign/list", dr),
+        ("ads: marketing report", "/marketing/report/get", dr),
+        ("ads: sponsor solutions report", "/sponsor/solutions/report/get", dr),
+        ("ads: sponsor affiliate", "/sponsor/affiliate/campaign/list", dr),
+        ("ads: ssc campaign", "/ssc/campaign/list", dr),
     ]
     out = []
     for label, path, params in cands:
