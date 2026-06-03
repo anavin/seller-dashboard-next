@@ -330,6 +330,20 @@
       </div>
     </section>
 
+    <!-- INSIGHT / วิเคราะห์เชิงลึก (ใช้ข้อมูลทุกช่วงเวลา ไม่ขึ้นกับฟิลเตอร์วันที่) -->
+    <section class="section" id="sec-insight">
+      <h2><span class="bar"></span>วิเคราะห์เชิงลึก <span class="hint">ใช้ข้อมูลทั้งหมด ไม่ขึ้นกับช่วงวันที่ที่เลือก</span></h2>
+      <div class="grid charts">
+        <div class="card c-6"><div class="ctitle">เทียบยอดขายปีต่อปี (YoY)</div><div class="csub">รายเดือน · แยกสีตามปี (พ.ศ.)</div><div class="chart-wrap sm"><canvas id="yoyChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">ฤดูกาล — เดือนไหนขายดี</div><div class="csub">ยอดเฉลี่ยรายเดือนข้ามปี (เขียว = พีค)</div><div class="chart-wrap sm"><canvas id="seasonChart"></canvas></div></div>
+        <div class="card c-12"><div class="ctitle">สัดส่วนหมวดหมู่ตามเวลา</div><div class="csub">ยอดขายแยกหมวด รายเดือน (ซ้อน)</div><div class="chart-wrap sm"><canvas id="catTimeChart"></canvas></div></div>
+        <div class="card c-6"><div class="ctitle">📈 สินค้ามาแรง (90 วันล่าสุด vs ก่อนหน้า)</div><div class="csub">ยอดขายเพิ่มขึ้นมากสุด</div><div class="tbl-scroll" style="margin-top:8px"><table id="gainTable"></table></div></div>
+        <div class="card c-6"><div class="ctitle">📉 สินค้าขาตก</div><div class="csub">ยอดขายลดลงมากสุด — ควรกระตุ้น/ลดสต็อก</div><div class="tbl-scroll" style="margin-top:8px"><table id="loseTable"></table></div></div>
+        <div class="card c-6"><div class="ctitle">💤 Dead stock — มีของแต่ไม่ขาย</div><div class="csub">มีสต็อกแต่ไม่มียอดขายใน 90 วันล่าสุด</div><div class="tbl-scroll" style="margin-top:8px"><table id="deadTable"></table></div></div>
+        <div class="card c-6"><div class="ctitle">🧺 สินค้าซื้อคู่กันบ่อย</div><div class="csub">จับคู่จัดเซ็ต/บันเดิล เพิ่มยอดต่อบิล</div><div class="tbl-scroll" style="margin-top:8px"><table id="basketTable"></table></div></div>
+      </div>
+    </section>
+
     <div style="text-align:center;color:var(--soft);font-size:12px;padding:8px 0 20px">
       อัปเดตข้อมูล: รัน <code>python run.py</code> แล้ว push ขึ้น GitHub · ข้อมูลคำนวณสดในเบราว์เซอร์ตามฟิลเตอร์
     </div>
@@ -588,6 +602,57 @@ function render(){
   renderTrends(curD);
   renderHeatmap(curSet);
   renderDist(curSet);
+  renderInsight();
+}
+// ---------- วิเคราะห์เชิงลึก (ใช้ข้อมูลทั้งหมด ไม่ขึ้นกับฟิลเตอร์วันที่) ----------
+function renderInsight(){
+  const valid=DATA.orders.filter(o=>o.platform==='lazada'&&o.status!=='cancelled'&&o.status!=='returned');
+  const accent=cssvar('--accent'), pal=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4'];
+  const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
+  // 1) YoY รายเดือน
+  const ym={};
+  for(const o of valid){const y=+o.date.slice(0,4),m=+o.date.slice(5,7)-1;(ym[y]||(ym[y]=Array(12).fill(0)))[m]+=revOf(o);}
+  const years=Object.keys(ym).sort();
+  mk('yoyChart',{type:'bar',data:{labels:THMON,datasets:years.map((y,i)=>({label:''+((+y+543)%100),data:ym[y],backgroundColor:pal[i%pal.length],borderRadius:4}))},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},scales:{y:{ticks:{callback:fmtK}}}}});
+  // 2) Seasonality
+  const mSum=Array(12).fill(0),mCnt=Array(12).fill(0);
+  for(const y of years)for(let m=0;m<12;m++)if(ym[y][m]>0){mSum[m]+=ym[y][m];mCnt[m]++;}
+  const seas=mSum.map((v,i)=>mCnt[i]?v/mCnt[i]:0),peak=Math.max(...seas);
+  mk('seasonChart',{type:'bar',data:{labels:THMON,datasets:[{data:seas,backgroundColor:seas.map(v=>v===peak&&v>0?'#10b981':accent),borderRadius:5}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:fmtK}}}}});
+  // 3) หมวดหมู่ตามเวลา (stacked)
+  const cats=DATA.meta.categories.slice();
+  const monthsSet=[...new Set(valid.map(o=>o.date.slice(0,7)))].sort();
+  const mi=Object.fromEntries(monthsSet.map((m,i)=>[m,i]));
+  const cbm={}; cats.forEach(c=>cbm[c]=monthsSet.map(()=>0));
+  for(const o of valid){const k=mi[o.date.slice(0,7)];for(const it of o.items)if(cbm[it.category]!==undefined)cbm[it.category][k]+=it.qty*it.price;}
+  mk('catTimeChart',{type:'bar',data:{labels:monthsSet,datasets:cats.map((c,i)=>({label:c,data:cbm[c],backgroundColor:pal[i%pal.length]}))},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{callback:fmtK}}}}});
+  // 4) มาแรง/ขาตก (90 วันล่าสุด vs ก่อนหน้า)
+  const end=DATA.meta.end_date,d90=addDays(end,-90),d180=addDays(end,-180);
+  const cur={},prev={};
+  for(const o of valid){const c=o.date>d90&&o.date<=end,p=o.date>d180&&o.date<=d90;if(!c&&!p)continue;
+    for(const it of o.items){const k=it.name||it.sku;const v=it.qty*it.price;if(c)cur[k]=(cur[k]||0)+v;else prev[k]=(prev[k]||0)+v;}}
+  const keys=[...new Set([...Object.keys(cur),...Object.keys(prev)])];
+  const mv=keys.map(k=>({name:k,d:(cur[k]||0)-(prev[k]||0),c:cur[k]||0,p:prev[k]||0}));
+  const moverRows=(arr,sign)=>arr.length?arr.map(m=>`<tr><td>${m.name}</td><td class="num">${fmt(m.p)}</td><td class="num">${fmt(m.c)}</td><td class="num ${sign>0?'pos':'neg'}">${sign>0?'+':''}${fmt(m.d)}</td></tr>`).join(''):'<tr><td colspan="4" class="muted" style="text-align:center;padding:14px">ไม่มีข้อมูลพอ</td></tr>';
+  const head='<thead><tr><th>สินค้า</th><th class="num">ก่อนหน้า</th><th class="num">90วันล่าสุด</th><th class="num">เปลี่ยน</th></tr></thead><tbody>';
+  $('#gainTable').innerHTML=head+moverRows(mv.filter(m=>m.d>0).sort((a,b)=>b.d-a.d).slice(0,8),1)+'</tbody>';
+  $('#loseTable').innerHTML=head+moverRows(mv.filter(m=>m.d<0).sort((a,b)=>a.d-b.d).slice(0,8),-1)+'</tbody>';
+  // 5) Dead stock
+  const sold90=new Set();for(const o of valid)if(o.date>d90)for(const it of o.items)sold90.add(it.sku);
+  const dead=DATA.products.filter(p=>p.stock.lazada>0&&!sold90.has(p.sku)).sort((a,b)=>b.stock.lazada-a.stock.lazada).slice(0,15);
+  $('#deadTable').innerHTML='<thead><tr><th>SKU</th><th>สินค้า</th><th class="num">สต็อก</th></tr></thead><tbody>'+
+    (dead.length?dead.map(p=>`<tr><td class="muted">${p.sku}</td><td>${p.name}</td><td class="num">${fmt(p.stock.lazada)}</td></tr>`).join(''):'<tr><td colspan="3" class="muted" style="text-align:center;padding:14px">ไม่มี — สินค้าที่มีสต็อกขายได้หมด ✅</td></tr>')+'</tbody>';
+  // 6) ซื้อคู่กันบ่อย
+  const pc={};
+  for(const o of valid){const sk=[...new Set(o.items.map(i=>i.name||i.sku))];
+    for(let a=0;a<sk.length;a++)for(let b=a+1;b<sk.length;b++){const key=[sk[a],sk[b]].sort().join('|');pc[key]=(pc[key]||0)+1;}}
+  const pairs=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  $('#basketTable').innerHTML='<thead><tr><th>คู่สินค้า</th><th class="num">ซื้อคู่กัน (ครั้ง)</th></tr></thead><tbody>'+
+    (pairs.length?pairs.map(([k,n])=>`<tr><td>${k.split('|').join(' + ')}</td><td class="num">${fmt(n)}</td></tr>`).join(''):'<tr><td colspan="2" class="muted" style="text-align:center;padding:14px">ลูกค้าส่วนใหญ่ซื้อทีละชิ้น</td></tr>')+'</tbody>';
 }
 function renderTrends(curD){
   const valid=ordersIn(new Set(curD)).filter(o=>o.status!=='cancelled'&&o.status!=='returned');
