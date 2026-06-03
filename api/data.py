@@ -407,12 +407,64 @@ def db_stats():
     }
 
 
+def summary_week():
+    """สรุปรายสัปดาห์แบบเบา ๆ สำหรับส่งอัตโนมัติ — /api/data?summary=week"""
+    h = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"}
+    today = datetime.date.today()
+    d7 = today - datetime.timedelta(days=7)
+    d14 = today - datetime.timedelta(days=14)
+    orders = _sb_all("lz_orders", "order_id,date,status", "&date=gte." + d14.isoformat())
+    bad = ("canceled", "cancelled", "returned", "failed", "refund", "refunded")
+    valid = [o for o in orders if str(o.get("status", "")).lower() not in bad]
+    omap = {o["order_id"]: o for o in valid}
+    oids = list(omap.keys())
+    items = []
+    for i in range(0, len(oids), 80):
+        ids = ",".join('"%s"' % x for x in oids[i:i + 80])
+        r = requests.get(f"{SB_URL}/rest/v1/lz_order_items?select=order_id,name,sku,qty,price&order_id=in.({ids})",
+                         headers=h, timeout=25)
+        if r.ok:
+            items += r.json()
+    cut = d7.isoformat()
+    rev = {"cur": 0.0, "prev": 0.0}
+    ordset = {"cur": set(), "prev": set()}
+    prod = {}
+    for it in items:
+        o = omap.get(it["order_id"])
+        if not o:
+            continue
+        w = "cur" if str(o.get("date", "")) >= cut else "prev"
+        v = float(it.get("price", 0) or 0) * int(it.get("qty", 1) or 1)
+        rev[w] += v
+        ordset[w].add(it["order_id"])
+        if w == "cur":
+            k = it.get("name") or it.get("sku") or "-"
+            prod[k] = prod.get(k, 0) + v
+    top = sorted(prod.items(), key=lambda x: -x[1])[:5]
+    prods = _sb_all("lz_products", "sku,name,stock_lazada")
+    out = [p for p in prods if int(p.get("stock_lazada", 0) or 0) == 0]
+    low = [p for p in prods if 0 < int(p.get("stock_lazada", 0) or 0) < 30]
+    return {
+        "period": {"this_week_from": cut, "to": today.isoformat()},
+        "revenue_this_week": round(rev["cur"], 2),
+        "revenue_last_week": round(rev["prev"], 2),
+        "growth_pct": round((rev["cur"] - rev["prev"]) / rev["prev"] * 100, 1) if rev["prev"] else None,
+        "orders_this_week": len(ordset["cur"]),
+        "orders_last_week": len(ordset["prev"]),
+        "top_products": [{"name": n, "revenue": round(v, 2)} for n, v in top],
+        "out_of_stock": len(out),
+        "low_stock": len(low),
+        "low_stock_samples": [p.get("name") for p in low[:5]],
+    }
+
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         pw = qs.get("pw", [""])[0]
         debug = qs.get("debug", ["0"])[0] in ("1", "true", "yes")
         stats = qs.get("stats", ["0"])[0] in ("1", "true", "yes")
+        summary = qs.get("summary", [""])[0]
         fincheck = qs.get("fincheck", ["0"])[0] in ("1", "true", "yes")
         if pw != os.environ.get("DASH_PASSWORD", ""):
             self._send(401, {"error": "unauthorized"})
@@ -420,6 +472,9 @@ class handler(BaseHTTPRequestHandler):
         try:
             if fincheck:
                 self._send(200, finance_check())
+                return
+            if summary == "week" and SB_URL and SB_KEY:
+                self._send(200, summary_week())
                 return
             if stats and SB_URL and SB_KEY:
                 self._send(200, db_stats())

@@ -164,6 +164,31 @@
     .sidebar.open{left:0}
     .menu-toggle{display:inline-flex}
   }
+  /* ---------- มือถือ ---------- */
+  @media(max-width:640px){
+    .content{padding:13px 11px;gap:18px}
+    .topbar{padding:11px 12px;gap:9px}
+    .topbar h1{font-size:15px}
+    .topbar .meta{font-size:11px}
+    .filters{width:100%;gap:8px}
+    .seg{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .seg::-webkit-scrollbar{display:none}
+    .seg button{flex:0 0 auto;padding:7px 11px}
+    .chips{flex-wrap:wrap}
+    select,.dateinput{flex:1 1 auto;min-width:0}
+    .kpis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+    .kpi{padding:13px 14px}
+    .kpi .value{font-size:21px}
+    .kpi .spark{width:64px;height:22px}
+    .card{padding:13px 13px}
+    .chart-wrap{height:250px}
+    .chart-wrap.sm{height:215px}
+    .section h2{font-size:13px}
+    .section h2 .hint{display:none}
+    .modal-lg{max-width:96vw}
+    #chartModalBody{height:70vh}
+    .info{display:none}
+  }
   /* ---------- Login overlay ---------- */
   #loginOverlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;
     background:linear-gradient(135deg,#0c0e14,#1a1d3a);padding:20px}
@@ -379,8 +404,8 @@
         <div class="card c-7"><div class="ctitle">Growth Matrix สินค้า</div><div class="csub">แกนนอน=ยอดขาย 90วัน · แกนตั้ง=เติบโต% · เขียว=ดาวรุ่ง แดง=ควรตัด</div><div class="chart-wrap"><canvas id="growthChart"></canvas></div></div>
         <div class="card c-5"><div class="ctitle">อัตรายกเลิก/คืน ตามหมวด</div><div class="csub">% ของออเดอร์ที่ถูกยกเลิก/คืน</div><div class="chart-wrap"><canvas id="cancelChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">ราคาเฉลี่ย/ชิ้น ตามขนาด (ml)</div><div class="csub">ขนาดไหนมูลค่าต่อชิ้นสูง</div><div class="chart-wrap sm"><canvas id="mlPriceChart"></canvas></div></div>
-        <div class="card c-5"><div class="ctitle">ขนาด (ml) นิยมในแต่ละหมวด</div><div class="csub">จำนวนชิ้นแยกขนาด × หมวด (ซ้อน)</div><div class="chart-wrap sm"><canvas id="mlCatChart"></canvas></div></div>
-        <div class="card c-3"><div class="ctitle">กรุงเทพฯ vs ต่างจังหวัด</div><div class="csub">สัดส่วนรายได้</div><div class="chart-wrap sm"><canvas id="bkkChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">ขนาด (ml) นิยมในแต่ละหมวด</div><div class="csub">จำนวนชิ้นแยกขนาด × หมวด (ซ้อน)</div><div class="chart-wrap sm"><canvas id="mlCatChart"></canvas></div></div>
+        <div class="card c-4"><div class="ctitle">กรุงเทพฯ vs ต่างจังหวัด</div><div class="csub">สัดส่วนรายได้</div><div class="chart-wrap sm"><canvas id="bkkChart"></canvas></div></div>
       </div>
     </section>
 
