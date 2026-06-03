@@ -64,6 +64,7 @@ def build_from_db():
         "shipping_fee": float(o.get("shipping_fee", 0) or 0),
         "platform_fee": float(o.get("platform_fee", 0) or 0),
         "buyer": o.get("buyer_key", "") or "",
+        "payment": o.get("payment_method", "") or "",
         "items": by_order.get(o["order_id"], []),
     } for o in orders]
 

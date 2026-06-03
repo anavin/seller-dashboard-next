@@ -307,6 +307,8 @@
         <div class="card c-12"><div class="ctitle">🔥 ช่วงเวลาทอง — วัน × ชั่วโมง</div><div class="csub">สีเข้ม = ออเดอร์เยอะ (เลื่อนเมาส์ดูจำนวน)</div><div id="heatmap" style="overflow:auto;margin-top:8px"></div></div>
         <div class="card c-6"><div class="ctitle">จำนวนชิ้นต่อออเดอร์</div><div class="csub">ออเดอร์ส่วนใหญ่ซื้อกี่ชิ้น</div><div class="chart-wrap sm"><canvas id="itemDistChart"></canvas></div></div>
         <div class="card c-6"><div class="ctitle">การกระจายมูลค่าออเดอร์</div><div class="csub">ออเดอร์ส่วนใหญ่มูลค่าเท่าไหร่</div><div class="chart-wrap sm"><canvas id="valDistChart"></canvas></div></div>
+        <div class="card c-5"><div class="ctitle">ประเภทการชำระเงิน</div><div class="csub">สัดส่วนออเดอร์ตามวิธีจ่าย (COD/โอน/บัตร)</div><div class="chart-wrap sm"><canvas id="payChart"></canvas></div></div>
+        <div class="card c-7"><div class="ctitle">ยอดขายตามวิธีจ่าย รายเดือน</div><div class="csub">เทรนด์ COD vs จ่ายล่วงหน้า</div><div class="chart-wrap sm"><canvas id="payTrendChart"></canvas></div></div>
       </div>
     </section>
 
@@ -702,10 +704,31 @@ function render(){
   renderTrends(curD);
   renderHeatmap(curSet);
   renderDist(curSet);
+  renderPayment(curSet);
   renderInsight();
   renderFinance();
   renderAdvanced();
   renderCustomers();
+}
+// ---------- ประเภทการชำระเงิน ----------
+function renderPayment(curSet){
+  const pal=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4','#ec4899','#64748b'];
+  const cnt={}, monPay={}; let any=false;
+  for(const o of ordersIn(curSet)){ if(o.status==='cancelled'||o.status==='returned')continue;
+    const m=orderMatch(o); if(m.rev<=0)continue;
+    const p=(o.payment||'').trim()||'ไม่ระบุ'; if(o.payment)any=true;
+    cnt[p]=(cnt[p]||0)+1;
+    const mo=(o.date||'').slice(0,7); (monPay[mo]||(monPay[mo]={}))[p]=(monPay[mo][p]||0)+m.rev;
+  }
+  const keys=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
+  const kcol={}; keys.forEach((k,i)=>kcol[k]=pal[i%pal.length]);
+  mk('payChart',{type:'doughnut',data:{labels:keys,datasets:[{data:keys.map(k=>cnt[k]),backgroundColor:keys.map(k=>kcol[k]),borderWidth:0}]},
+    options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
+  const mks=Object.keys(monPay).sort();
+  mk('payTrendChart',{type:'bar',data:{labels:mks,datasets:keys.map(k=>({label:k,data:mks.map(m=>monPay[m][k]||0),backgroundColor:kcol[k]}))},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{x:{stacked:true,ticks:{maxTicksLimit:14,autoSkip:true,maxRotation:0,minRotation:0,callback:function(v){return dateTick(this.getLabelForValue(v)+'-01',9999);}}},y:{stacked:true,ticks:{callback:fmtK}}}}});
+  toggleCard('payChart', any); toggleCard('payTrendChart', any);
 }
 // ---------- ลูกค้า: ใหม่ vs ซื้อซ้ำ (จากลายนิ้วมือที่อยู่) ----------
 function renderCustomers(){
@@ -1334,6 +1357,8 @@ const CHART_HELP=[
   ['ยอดโอนสุทธิ','ยอดขายที่ settle แล้ว (น้ำเงิน), ค่าธรรมเนียมที่ Lazada หัก (แดง), และยอดที่โอนเข้าบัญชีจริง (เขียว) รายเดือน — ตัวเลขจริงจาก Lazada Finance'],
   ['อัตราค่าธรรมเนียม','สัดส่วนค่าธรรมเนียมที่ถูกหัก เทียบยอดขาย เป็น % รายเดือน ยิ่งต่ำยิ่งดี'],
   ['ยอดสั่งซื้อ vs','เทียบยอดสั่งซื้อจากออเดอร์ (น้ำเงิน) กับยอดที่เคลียร์ผ่าน Lazada Finance จริง (เขียว) · ช่องว่าง = เงินที่ยังรอเคลียร์ หรือหายไปจากของคืน/ยกเลิก'],
+  ['ประเภทการชำระเงิน','สัดส่วนออเดอร์ตามวิธีจ่าย เช่น เก็บเงินปลายทาง (COD), โอน, บัตรเครดิต, e-wallet'],
+  ['ยอดขายตามวิธีจ่าย','ยอดขายแยกตามวิธีชำระเงิน รายเดือน — ดูเทรนด์ COD เทียบจ่ายล่วงหน้า'],
   ['ออเดอร์: ลูกค้าใหม่ vs ซ้ำ','สัดส่วนออเดอร์จากลูกค้าใหม่ (ซื้อครั้งแรก) กับลูกค้าเดิมที่กลับมาซื้อซ้ำ · ประเมินจากลายนิ้วมือที่อยู่จัดส่ง'],
   ['จำนวนครั้งที่ลูกค้าซื้อ','ลูกค้าแต่ละคนซื้อกี่ครั้ง (1, 2, 3-4, 5+ ครั้ง) — ดูฐานลูกค้าประจำ'],
   ['ลูกค้าใหม่ vs ออเดอร์ซ้ำ รายเดือน','น้ำเงิน=ลูกค้าใหม่ที่ซื้อครั้งแรกในเดือนนั้น · เขียว=ออเดอร์จากลูกค้าเดิม'],

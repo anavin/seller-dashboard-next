@@ -181,6 +181,7 @@ def _build_rows(raw, items_by, sku_cat):
             "shipping_fee": float(o.get("shipping_fee", 0) or 0),
             "platform_fee": 0.0,
             "buyer_key": _buyer_key(o),
+            "payment_method": str(o.get("payment_method", "") or "").strip(),
             "created_at_lz": str(o.get("created_at", "")),
         })
         for n, it in enumerate(items_by.get(oid, [])):
