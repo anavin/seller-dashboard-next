@@ -996,7 +996,8 @@ function renderInsight(){
   for(const o of valid){const sk=[...new Set(o.items.map(i=>i.name||i.sku))];
     for(let a=0;a<sk.length;a++)for(let b=a+1;b<sk.length;b++){const key=[sk[a],sk[b]].sort().join('|');pc[key]=(pc[key]||0)+1;}}
   const pairs=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,lim('basketTable',10));
-  const sh=s=>{s=''+s;return s.length>26?s.slice(0,26)+'…':s;};
+  const bFull=EXPAND_ID==='basketTable';   // ตอนกดขยายให้โชว์ชื่อเต็ม
+  const sh=s=>{s=''+s;return (bFull||s.length<=26)?s:s.slice(0,26)+'…';};
   const esc=s=>(''+s).replace(/"/g,'&quot;');
   $('#basketTable').innerHTML='<thead><tr><th>#</th><th>สินค้า A</th><th style="text-align:center">คู่กับ</th><th>สินค้า B</th><th class="num">ครั้ง</th></tr></thead><tbody>'+
     (pairs.length?pairs.map(([k,n],i)=>{const p=k.split('|');return `<tr>
