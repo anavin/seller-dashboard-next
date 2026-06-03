@@ -290,6 +290,75 @@ def finance_upsert_month(access, app_key, app_secret, y, m):
     return s["n"]
 
 
+def _rev_get(r, keys, default=None):
+    for k in keys:
+        v = r.get(k)
+        if v not in (None, "", []):
+            return v
+    return default
+
+
+def run_reviews_sync():
+    """ดึงรีวิวสินค้าทั้งหมด: วน item_id -> /review/seller/list/v2 -> upsert lz_reviews"""
+    app_key = os.environ["LZ_APP_KEY"]
+    app_secret = os.environ["LZ_APP_SECRET"]
+    now = datetime.datetime.now().astimezone()
+    state = sb_get("lz_sync", "id=eq.1&select=refresh_token")
+    rt = (state[0].get("refresh_token") if state else None) or os.environ["LZ_REFRESH_TOKEN"]
+    access, new_rt = _refresh(app_key, app_secret, rt)
+    # ดึง item_id ทั้งหมด + map ชื่อ/sku
+    meta, item_ids, offset = {}, [], 0
+    while True:
+        d = _lz("/products/get", app_key, app_secret, access, {"limit": 50, "offset": offset, "filter": "all"})
+        batch = d.get("data", {}).get("products", [])
+        if not batch:
+            break
+        for p in batch:
+            iid = p.get("item_id")
+            if not iid:
+                continue
+            nm = (p.get("attributes") or {}).get("name", "")
+            sk = ""
+            for s in (p.get("skus") or [{}]):
+                sk = s.get("SellerSku") or s.get("ShopSku") or ""
+                break
+            meta[str(iid)] = (sk, nm)
+            item_ids.append(iid)
+        if len(batch) < 50:
+            break
+        offset += 50
+        if offset >= 10000:
+            break
+    rows = {}
+    for i in range(0, len(item_ids), 20):
+        chunk = item_ids[i:i + 20]
+        try:
+            d = _lz("/review/seller/list/v2", app_key, app_secret, access, {"id_list": json.dumps(chunk)})
+        except Exception:
+            continue
+        rlist = (d.get("data") or {}).get("review_list") or []
+        for r in rlist:
+            rid = str(_rev_get(r, ["review_id", "id", "reviewId"], "") or "")
+            if not rid:
+                continue
+            iid = str(_rev_get(r, ["item_id", "product_id", "itemId"], "") or "")
+            sk, nm = meta.get(iid, ("", ""))
+            rows[rid] = {
+                "review_id": rid,
+                "item_id": iid,
+                "sku": sk,
+                "name": (_rev_get(r, ["item_name", "product_name", "title"], "") or nm or sk),
+                "rating": int(_rev_get(r, ["rating", "review_rating", "star", "score"], 0) or 0),
+                "content": str(_rev_get(r, ["review_content", "buyer_review", "content", "comment", "reviewContent"], "") or ""),
+                "review_time": str(_rev_get(r, ["review_time", "gmt_create", "create_time", "reviewTime", "createTime"], "") or ""),
+                "has_reply": bool(_rev_get(r, ["seller_reply", "reply", "sellerReply"], "")),
+            }
+    if rows:
+        sb_upsert("lz_reviews", list(rows.values()), "review_id")
+    sb_upsert("lz_sync", [{"id": 1, "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
+    return {"ok": True, "mode": "reviews", "items_checked": len(item_ids), "reviews": len(rows)}
+
+
 def run_finance_sync(since="2023-01-01"):
     """ดึงข้อมูลการเงินทีละเดือน (กัน Lazada RPC timeout) ข้ามเดือนที่มีแล้ว — เรียกซ้ำจนกว่า more=false"""
     app_key = os.environ["LZ_APP_KEY"]
@@ -482,7 +551,11 @@ class handler(BaseHTTPRequestHandler):
         fill_all = qs.get("backfill", [""])[0] == "all"
         since_date = qs.get("since", [None])[0]
         finance = qs.get("finance", [None])[0]
+        reviews = qs.get("reviews", ["0"])[0] in ("1", "true", "yes")
         try:
+            if reviews:
+                self._send(200, run_reviews_sync())
+                return
             if finance:
                 since = finance if finance not in ("1", "all", "true", "yes") else "2023-01-01"
                 self._send(200, run_finance_sync(since))

@@ -119,13 +119,26 @@ def build_from_db():
             })
     except Exception:
         finance = []
+    reviews = []
+    try:
+        for r in _sb_all("lz_reviews"):
+            reviews.append({
+                "item_id": r.get("item_id", ""), "sku": r.get("sku", ""),
+                "name": r.get("name", "") or r.get("sku", ""),
+                "rating": int(r.get("rating", 0) or 0),
+                "content": r.get("content", "") or "",
+                "time": str(r.get("review_time", "") or "")[:10],
+                "reply": bool(r.get("has_reply")),
+            })
+    except Exception:
+        reviews = []
     return {
         "meta": {"currency": "THB",
                  "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
                  "start_date": dates[0] if dates else "", "end_date": dates[-1] if dates else "",
                  "days": len(dates), "source": "supabase", "last_sync": last_sync,
                  "platforms": ["tiktok", "shopee", "lazada"], "categories": cats, "regions": regions},
-        "orders": order_rows, "products": prod_rows, "ads": [], "finance": finance,
+        "orders": order_rows, "products": prod_rows, "ads": [], "finance": finance, "reviews": reviews,
     }
 
 
@@ -218,22 +231,23 @@ def api_probe():
     ms_b = int(now.timestamp() * 1000)
     sec_a = int((now - datetime.timedelta(days=180)).timestamp())
     sec_b = int(now.timestamp())
-    # หา item_id สำหรับ review list v2
-    item_id = None
+    # ดึง item_id หลายตัวมายิง review list v2 (ให้เจอตัวที่มีรีวิว)
+    item_ids = []
     try:
-        dp = _call(LAZADA_BASE, "/products/get", app_key, app_secret, access, {"limit": 1, "filter": "all"})
-        prods = (dp.get("data") or {}).get("products") or []
-        if prods:
-            item_id = prods[0].get("item_id")
+        dp = _call(LAZADA_BASE, "/products/get", app_key, app_secret, access, {"limit": 50, "filter": "all"})
+        for p in ((dp.get("data") or {}).get("products") or []):
+            iid = p.get("item_id")
+            if iid:
+                item_ids.append(iid)
     except Exception:
-        item_id = None
+        item_ids = []
     cands = [
-        ("รีวิว: history (current+page_size)", "/review/seller/history/list",
-         {"start_time": ms_a, "end_time": ms_b, "current": 1, "page_size": 20}),
-        ("รีวิว: history (current+limit)", "/review/seller/history/list",
-         {"start_time": ms_a, "end_time": ms_b, "current": 1, "limit": 20}),
-        ("รีวิว: list v2 (item_id)", "/review/seller/list/v2",
-         {"id_list": json.dumps([item_id]) if item_id else "[]", "review_type": "all"}),
+        ("รีวิว: list v2 (50 สินค้า)", "/review/seller/list/v2",
+         {"id_list": json.dumps(item_ids[:50])}),
+        ("รีวิว: list v2 (review_type=all)", "/review/seller/list/v2",
+         {"id_list": json.dumps(item_ids[:50]), "review_type": "all"}),
+        ("รีวิว: history (item แรก)", "/review/seller/history/list",
+         {"item_id": item_ids[0] if item_ids else 0, "start_time": ms_a, "end_time": ms_b, "current": 1, "page_size": 20}),
         ("ออเดอร์รายตัว (มี voucher)", "/order/get", ({"order_id": oid} if oid else {})),
     ]
     out = []
@@ -252,6 +266,48 @@ def api_probe():
             out.append({"api": label, "path": path, "ok": False, "result": str(e)})
     return {"order_id_used": oid, "probes": out,
             "หมายเหตุ": "ok+has_data = ใช้ได้ · InvalidApiPath = path ผิด (ลอง path อื่น) · permission/whitelist = ต้องเปิดสิทธิ์"}
+
+
+def review_sample():
+    """ดึงรีวิวจริงมาดูโครงสร้างฟิลด์ (หา item ที่มีรีวิวแล้วคืน raw review ตัวแรก)"""
+    app_key = os.environ["LZ_APP_KEY"]
+    app_secret = os.environ["LZ_APP_SECRET"]
+    rt = None
+    try:
+        sy = _sb_all("lz_sync", "refresh_token")
+        rt = sy[0].get("refresh_token") if sy else None
+    except Exception:
+        rt = None
+    rt = rt or os.environ.get("LZ_REFRESH_TOKEN", "")
+    access = _refresh(app_key, app_secret, rt)
+    item_ids, offset = [], 0
+    while True and offset < 2000:
+        dp = _call(LAZADA_BASE, "/products/get", app_key, app_secret, access,
+                   {"limit": 50, "offset": offset, "filter": "all"})
+        batch = (dp.get("data") or {}).get("products") or []
+        if not batch:
+            break
+        for p in batch:
+            if p.get("item_id"):
+                item_ids.append(p.get("item_id"))
+        if len(batch) < 50:
+            break
+        offset += 50
+    checked = 0
+    for i in range(0, len(item_ids), 20):
+        chunk = item_ids[i:i + 20]
+        checked += len(chunk)
+        try:
+            d = _call(LAZADA_BASE, "/review/seller/list/v2", app_key, app_secret, access,
+                      {"id_list": json.dumps(chunk)})
+        except Exception:
+            continue
+        rlist = (d.get("data") or {}).get("review_list") or []
+        if rlist:
+            return {"items_checked": checked, "total_items": len(item_ids),
+                    "first_review_raw": rlist[0], "review_keys": sorted(rlist[0].keys())}
+    return {"items_checked": checked, "total_items": len(item_ids),
+            "first_review_raw": None, "note": "ยังไม่เจอ item ที่มีรีวิว (อาจต้องเช็ก item เยอะกว่านี้ หรือร้านยังรีวิวน้อย)"}
 
 
 def _refresh(app_key, app_secret, refresh_token):
@@ -587,6 +643,7 @@ class handler(BaseHTTPRequestHandler):
         fincheck = qs.get("fincheck", ["0"])[0] in ("1", "true", "yes")
         ordersample = qs.get("ordersample", ["0"])[0] in ("1", "true", "yes")
         apiprobe = qs.get("apiprobe", ["0"])[0] in ("1", "true", "yes")
+        reviewsample = qs.get("reviewsample", ["0"])[0] in ("1", "true", "yes")
         if pw != os.environ.get("DASH_PASSWORD", ""):
             self._send(401, {"error": "unauthorized"})
             return
@@ -599,6 +656,9 @@ class handler(BaseHTTPRequestHandler):
                 return
             if apiprobe:
                 self._send(200, api_probe())
+                return
+            if reviewsample:
+                self._send(200, review_sample())
                 return
             if summary == "week" and SB_URL and SB_KEY:
                 self._send(200, summary_week())

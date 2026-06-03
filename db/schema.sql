@@ -62,6 +62,19 @@ create table if not exists lz_finance (
   created_at_lz    text
 );
 
+-- รีวิวสินค้าจาก Lazada
+create table if not exists lz_reviews (
+  review_id    text primary key,
+  item_id      text,
+  sku          text,
+  name         text,
+  rating       int default 0,
+  content      text,
+  review_time  text,
+  has_reply    boolean default false
+);
+
 create index if not exists idx_items_order on lz_order_items(order_id);
 create index if not exists idx_orders_date on lz_orders(date);
 create index if not exists idx_finance_date on lz_finance(date);
+create index if not exists idx_reviews_item on lz_reviews(item_id);

@@ -231,6 +231,7 @@
     <a data-sec="ads"><span class="ic">🎯</span> โฆษณา</a>
     <a data-sec="inventory"><span class="ic">🏷️</span> สต็อก</a>
     <a data-sec="customers"><span class="ic">👥</span> ลูกค้า</a>
+    <a data-sec="reviews"><span class="ic">⭐</span> รีวิว</a>
     <a data-sec="finance"><span class="ic">💵</span> การเงิน</a>
     <a data-sec="insight"><span class="ic">🔍</span> วิเคราะห์เชิงลึก</a>
     <a data-sec="advanced"><span class="ic">📊</span> วิเคราะห์ขั้นสูง</a>
@@ -385,6 +386,17 @@
         <div class="card c-4"><div class="ctitle">AOV: ลูกค้าใหม่ vs ซ้ำ</div><div class="csub">ยอดเฉลี่ย/ออเดอร์ — ลูกค้าซ้ำจ่ายมากกว่าไหม</div><div class="chart-wrap sm"><canvas id="custAovChart"></canvas></div></div>
         <div class="card c-4"><div class="ctitle">ระยะห่างก่อนกลับมาซื้อ</div><div class="csub">นานแค่ไหนกว่าจะซื้อครั้งถัดไป</div><div class="chart-wrap sm"><canvas id="custGapChart"></canvas></div></div>
         <div class="card c-12"><div class="ctitle">ลูกค้าประจำ (ซื้อซ้ำมากสุด)</div><div class="csub">ปกปิดตัวตน — แสดงเป็นรหัส</div><div class="tbl-scroll" style="margin-top:10px"><table id="custTable"></table></div></div>
+      </div>
+    </section>
+
+    <!-- REVIEWS / รีวิวสินค้า -->
+    <section class="section" id="sec-reviews">
+      <h2><span class="bar"></span>รีวิวสินค้า <span class="hint">จาก Lazada · ใช้ข้อมูลทั้งหมด</span></h2>
+      <div class="grid kpis" id="reviewKpi"></div>
+      <div class="grid charts" style="margin-top:14px">
+        <div class="card c-5"><div class="ctitle">การกระจายคะแนนดาว</div><div class="csub">1–5 ดาว</div><div class="chart-wrap sm"><canvas id="ratingDistChart"></canvas></div></div>
+        <div class="card c-7"><div class="ctitle">สินค้าคะแนนต่ำ (ควรปรับปรุง)</div><div class="csub">เรียงคะแนนเฉลี่ยน้อยสุด (รีวิว ≥ 2)</div><div class="tbl-scroll" style="margin-top:8px"><table id="reviewLowTable"></table></div></div>
+        <div class="card c-12"><div class="ctitle">รีวิวแย่ล่าสุด (≤ 3 ดาว)</div><div class="csub">ดูว่าลูกค้าติเรื่องอะไร จะได้แก้</div><div class="tbl-scroll" style="margin-top:8px"><table id="reviewBadTable"></table></div></div>
       </div>
     </section>
 
@@ -647,6 +659,7 @@ function render(){
   markEmpty('sec-profit', !(s.cogs>0||s.fee>0||ad.spend>0));
   markEmpty('sec-finance', !(DATA.finance&&DATA.finance.length));
   markEmpty('sec-customers', !(DATA.orders||[]).some(o=>o.buyer));
+  markEmpty('sec-reviews', !(DATA.reviews&&DATA.reviews.length));
   applyVisibility();
 
   let syncStr='';
@@ -731,6 +744,29 @@ function render(){
   renderFinance();
   renderAdvanced();
   renderCustomers();
+  renderReviews();
+}
+// ---------- รีวิวสินค้า (ใช้ข้อมูลทั้งหมด) ----------
+function renderReviews(){
+  const rv=DATA.reviews||[]; if(!rv.length)return;
+  const n=rv.length, avg=rv.reduce((s,r)=>s+(r.rating||0),0)/n;
+  const good=rv.filter(r=>r.rating>=4).length, replied=rv.filter(r=>r.reply).length;
+  $('#reviewKpi').innerHTML=
+    kpiCard('คะแนนเฉลี่ย',avg.toFixed(2)+' ★')+
+    kpiCard('จำนวนรีวิว',fmt(n))+
+    kpiCard('รีวิว 4-5 ดาว',(good/n*100).toFixed(0)+'%')+
+    kpiCard('ตอบกลับแล้ว',(replied/n*100).toFixed(0)+'%');
+  const dist=[0,0,0,0,0]; for(const r of rv){const s=r.rating|0; if(s>=1&&s<=5)dist[s-1]++;}
+  mk('ratingDistChart',{type:'bar',data:{labels:['1★','2★','3★','4★','5★'],datasets:[{data:dist,backgroundColor:['#ef4444','#f97316','#f59e0b','#84cc16','#10b981'],borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{precision:0}}}}});
+  const byP={}; for(const r of rv){const k=r.name||r.sku||r.item_id||'-'; (byP[k]||(byP[k]={sum:0,n:0})); byP[k].sum+=r.rating||0; byP[k].n++;}
+  const low=Object.entries(byP).map(e=>({name:e[0],avg:e[1].sum/e[1].n,n:e[1].n})).filter(p=>p.n>=2).sort((a,b)=>a.avg-b.avg).slice(0,lim('reviewLowTable',15));
+  const shN=s=>{s=''+s;return s.length>40?s.slice(0,40)+'…':s;};
+  $('#reviewLowTable').innerHTML='<thead><tr><th>สินค้า</th><th class="num">คะแนนเฉลี่ย</th><th class="num">จำนวนรีวิว</th></tr></thead><tbody>'+
+    (low.length?low.map(p=>`<tr><td title="${(''+p.name).replace(/"/g,'&quot;')}">${shN(p.name)}</td><td class="num ${p.avg<3.5?'neg':p.avg>=4.5?'pos':''}">${p.avg.toFixed(2)} ★</td><td class="num">${p.n}</td></tr>`).join(''):'<tr><td colspan="3" class="muted" style="text-align:center;padding:14px">ยังไม่มีรีวิวพอ</td></tr>')+'</tbody>';
+  const bad=rv.filter(r=>r.rating&&r.rating<=3).sort((a,b)=>(b.time||'').localeCompare(a.time||'')).slice(0,lim('reviewBadTable',20));
+  $('#reviewBadTable').innerHTML='<thead><tr><th>วันที่</th><th class="num">ดาว</th><th>สินค้า</th><th>รีวิว</th></tr></thead><tbody>'+
+    (bad.length?bad.map(r=>`<tr><td class="muted">${r.time||'-'}</td><td class="num neg">${r.rating}★</td><td title="${(''+r.name).replace(/"/g,'&quot;')}">${shN(r.name)}</td><td>${(r.content||'').replace(/</g,'&lt;')||'<span class="muted">(ไม่มีข้อความ)</span>'}</td></tr>`).join(''):'<tr><td colspan="4" class="muted" style="text-align:center;padding:14px">ไม่มีรีวิวแย่ ✅</td></tr>')+'</tbody>';
 }
 // ---------- ประเภทการชำระเงิน ----------
 function renderPayment(curSet){
@@ -1420,6 +1456,9 @@ const CHART_HELP=[
   ['จำนวนครั้งที่ลูกค้าซื้อ','ลูกค้าแต่ละคนซื้อกี่ครั้ง (1, 2, 3-4, 5+ ครั้ง) — ดูฐานลูกค้าประจำ'],
   ['ลูกค้าใหม่ vs ออเดอร์ซ้ำ รายเดือน','น้ำเงิน=ลูกค้าใหม่ที่ซื้อครั้งแรกในเดือนนั้น · เขียว=ออเดอร์จากลูกค้าเดิม'],
   ['ลูกค้าประจำ','ลูกค้าที่ซื้อซ้ำมากสุด (ปกปิดตัวตน แสดงเป็นรหัส) · จำนวนครั้ง ยอดรวม และวันที่ซื้อล่าสุด'],
+  ['การกระจายคะแนนดาว','จำนวนรีวิวแยกตามดาว 1-5 · ดูภาพรวมว่าลูกค้าให้คะแนนเป็นยังไง'],
+  ['สินค้าคะแนนต่ำ','สินค้าที่คะแนนเฉลี่ยน้อยสุด (มีรีวิว ≥ 2) — ตัวที่ควรปรับปรุงด่วน'],
+  ['รีวิวแย่ล่าสุด','รีวิว ≤ 3 ดาวล่าสุด พร้อมข้อความ — อ่านว่าลูกค้าติเรื่องอะไร จะได้แก้ตรงจุด'],
   ['ใบสรุปยอดโอน','รายการ settlement แต่ละใบจาก Lazada — ยอดขาย ค่าธรรมเนียม และยอดโอนสุทธิเข้าบัญชี'],
   ['พยากรณ์ยอดขาย','คาดการณ์ยอด 3 เดือนข้างหน้าจากเทรนด์ + ฤดูกาล · แถบจาง = ช่วงคลาดเคลื่อนที่เป็นไปได้ (±1 SD)'],
   ['วันแคมเปญดันยอด','ยอดขายเฉลี่ยต่อวัน เทียบ 3 แบบ: วันเลขเบิ้ล (1.1, 11.11…), วันเงินเดือนออก (25-สิ้นเดือน), และวันธรรมดา'],
@@ -1478,9 +1517,13 @@ async function backfillAll(){
       const j=await r.json(); if(j.error){break;} flines+=(j.txn_lines_added||0); fmore=!!j.more;
     }catch(e){fmore=false;}
   }
-  btn.textContent=`✓ +${added.toLocaleString()} ออเดอร์ · การเงิน ${flines.toLocaleString()} บรรทัด`;
+  // 3) รีวิวสินค้า
+  let nrev=0; btn.textContent='⏳ ดึงรีวิว…';
+  try{const r=await fetch(`/api/sync?pw=${encodeURIComponent(pw)}&reviews=1`);
+    const j=await r.json(); nrev=j.reviews||0;}catch(e){}
+  btn.textContent=`✓ +${added.toLocaleString()} ออเดอร์ · การเงิน ${flines.toLocaleString()} · รีวิว ${nrev.toLocaleString()}`;
   btn.disabled=false;
-  setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1200);
+  setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1500);
 }
 $('#backfillBtn').onclick=backfillAll;
 // ---------- ดึงการเงิน: วนเรียก finance=1 จนกว่า more=false ----------
