@@ -294,7 +294,7 @@ def review_sample():
             break
         offset += 50
     now = datetime.datetime.now().astimezone()
-    sec_b = int(now.timestamp())
+    ms_b = int(now.timestamp() * 1000)
 
     def _rlist(d):
         data = d.get("data")
@@ -302,24 +302,25 @@ def review_sample():
             return data.get("review_list") or data.get("reviews") or data.get("list") or []
         return data if isinstance(data, list) else []
 
-    # หาช่วงเวลาที่ Lazada ยอมรับ (start_time ย้อนหลังได้ไม่เกินเท่าไหร่)
+    # หน่วย = มิลลิวินาที, ช่วงต้องสั้น — หา window ที่ Lazada ยอมรับ
     valid_days, perr = None, None
-    for days in [25, 14, 7, 3, 1]:
-        sa = int((now - datetime.timedelta(days=days)).timestamp())
+    for days in [7, 5, 3, 1]:
+        ma = int((now - datetime.timedelta(days=days)).timestamp() * 1000)
         try:
             _call(LAZADA_BASE, "/review/seller/history/list", app_key, app_secret, access,
-                  {"item_id": item_ids[0], "start_time": sa, "end_time": sec_b, "current": 1, "page_size": 20})
+                  {"item_id": item_ids[0], "start_time": ma, "end_time": ms_b, "current": 1, "page_size": 20})
             valid_days = days
             break
         except Exception as e:
             perr = str(e)
             if "STARTTIME" in perr or "TIMESPAN" in perr:
                 continue
-            valid_days = days  # error อื่น = ช่วงเวลาผ่าน แต่ติดอย่างอื่น
+            valid_days = days
             break
     if valid_days is None:
-        return {"first_review_raw": None, "note": "ทุกช่วงเวลาติด param error", "last_error": perr}
-    sa = int((now - datetime.timedelta(days=valid_days)).timestamp())
+        return {"first_review_raw": None, "note": "ทุกช่วงเวลาติด param error (ms)", "last_error": perr}
+    sa = int((now - datetime.timedelta(days=valid_days)).timestamp() * 1000)
+    sec_b = ms_b
     checked, last_err = 0, None
     for iid in item_ids:
         checked += 1
