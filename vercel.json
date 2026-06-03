@@ -3,6 +3,7 @@
     "api/sync.py": { "maxDuration": 60 }
   },
   "crons": [
-    { "path": "/api/sync", "schedule": "0 1 * * *" }
+    { "path": "/api/sync", "schedule": "0 1 * * *" },
+    { "path": "/api/sync?reviews=1", "schedule": "0 2 * * *" }
   ]
 }

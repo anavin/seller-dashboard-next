@@ -329,34 +329,57 @@ def run_reviews_sync():
         offset += 50
         if offset >= 10000:
             break
+    # ดึงรีวิว "ล่าสุด" ต่อสินค้า ผ่าน history (Lazada รับแค่ ms + ช่วงสั้น ~7 วัน)
+    ms_b = int(now.timestamp() * 1000)
+    ms_a = int((now - datetime.timedelta(days=7)).timestamp() * 1000)
     rows = {}
-    for i in range(0, len(item_ids), 20):
-        chunk = item_ids[i:i + 20]
-        try:
-            d = _lz("/review/seller/list/v2", app_key, app_secret, access, {"id_list": json.dumps(chunk)})
-        except Exception:
-            continue
-        rlist = (d.get("data") or {}).get("review_list") or []
-        for r in rlist:
-            rid = str(_rev_get(r, ["review_id", "id", "reviewId"], "") or "")
-            if not rid:
-                continue
-            iid = str(_rev_get(r, ["item_id", "product_id", "itemId"], "") or "")
-            sk, nm = meta.get(iid, ("", ""))
-            rows[rid] = {
-                "review_id": rid,
-                "item_id": iid,
-                "sku": sk,
-                "name": (_rev_get(r, ["item_name", "product_name", "title"], "") or nm or sk),
-                "rating": int(_rev_get(r, ["rating", "review_rating", "star", "score"], 0) or 0),
-                "content": str(_rev_get(r, ["review_content", "buyer_review", "content", "comment", "reviewContent"], "") or ""),
-                "review_time": str(_rev_get(r, ["review_time", "gmt_create", "create_time", "reviewTime", "createTime"], "") or ""),
-                "has_reply": bool(_rev_get(r, ["seller_reply", "reply", "sellerReply"], "")),
-            }
+    t0 = time.time()
+    processed, more = 0, False
+    for iid in item_ids:
+        if time.time() - t0 > 50:   # กัน Vercel timeout — เกินงบเวลาแล้วหยุด
+            more = True
+            break
+        processed += 1
+        sk, nm = meta.get(str(iid), ("", ""))
+        current = 1
+        while True:
+            try:
+                d = _lz("/review/seller/history/list", app_key, app_secret, access,
+                        {"item_id": iid, "start_time": ms_a, "end_time": ms_b, "current": current, "page_size": 50})
+            except Exception:
+                break
+            data = d.get("data")
+            rlist = []
+            if isinstance(data, dict):
+                rlist = data.get("review_list") or data.get("reviews") or data.get("list") or []
+            elif isinstance(data, list):
+                rlist = data
+            if not rlist:
+                break
+            for r in rlist:
+                rid = str(_rev_get(r, ["review_id", "id", "reviewId"], "") or "")
+                if not rid:
+                    continue
+                rows[rid] = {
+                    "review_id": rid,
+                    "item_id": str(iid),
+                    "sku": sk,
+                    "name": (_rev_get(r, ["item_name", "product_name", "title"], "") or nm or sk),
+                    "rating": int(_rev_get(r, ["rating", "review_rating", "star", "score"], 0) or 0),
+                    "content": str(_rev_get(r, ["review_content", "buyer_review", "content", "comment", "reviewContent"], "") or ""),
+                    "review_time": str(_rev_get(r, ["review_time", "gmt_create", "create_time", "reviewTime", "createTime"], "") or ""),
+                    "has_reply": bool(_rev_get(r, ["seller_reply", "reply", "sellerReply"], "")),
+                }
+            if len(rlist) < 50:
+                break
+            current += 1
+            if current > 20:
+                break
     if rows:
         sb_upsert("lz_reviews", list(rows.values()), "review_id")
     sb_upsert("lz_sync", [{"id": 1, "refresh_token": new_rt, "updated_at": now.isoformat()}], "id")
-    return {"ok": True, "mode": "reviews", "items_checked": len(item_ids), "reviews": len(rows)}
+    return {"ok": True, "mode": "reviews", "items_processed": processed,
+            "total_items": len(item_ids), "reviews": len(rows), "more": more}
 
 
 def run_finance_sync(since="2023-01-01"):
