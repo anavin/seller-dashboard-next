@@ -228,13 +228,12 @@ def api_probe():
     except Exception:
         item_id = None
     cands = [
-        ("รีวิว: history (ms)", "/review/seller/history/list",
-         {"start_time": ms_a, "end_time": ms_b, "limit": 5, "offset": 0}),
-        ("รีวิว: history (sec)", "/review/seller/history/list",
-         {"start_time": sec_a, "end_time": sec_b, "limit": 5, "offset": 0}),
+        ("รีวิว: history (current+page_size)", "/review/seller/history/list",
+         {"start_time": ms_a, "end_time": ms_b, "current": 1, "page_size": 20}),
+        ("รีวิว: history (current+limit)", "/review/seller/history/list",
+         {"start_time": ms_a, "end_time": ms_b, "current": 1, "limit": 20}),
         ("รีวิว: list v2 (item_id)", "/review/seller/list/v2",
          {"id_list": json.dumps([item_id]) if item_id else "[]", "review_type": "all"}),
-        ("จัดส่ง: trace", "/logistic/order/trace", ({"order_id": oid} if oid else {})),
         ("ออเดอร์รายตัว (มี voucher)", "/order/get", ({"order_id": oid} if oid else {})),
     ]
     out = []
