@@ -319,6 +319,28 @@ def db_stats():
     span = None
     if first and last:
         span = (datetime.date.fromisoformat(last) - datetime.date.fromisoformat(first)).days + 1
+
+    # นับออเดอร์ราย "เดือน" และจำนวน "วันที่มีออเดอร์" ในแต่ละเดือน
+    by_month, days_set = {}, {}
+    for r in _sb_all("lz_orders", "date"):
+        d = (r.get("date") or "")[:10]
+        if len(d) < 7:
+            continue
+        mo = d[:7]
+        by_month[mo] = by_month.get(mo, 0) + 1
+        days_set.setdefault(mo, set()).add(d)
+
+    months = []
+    if first and last:
+        cur = datetime.date.fromisoformat(first[:7] + "-01")
+        end = datetime.date.fromisoformat(last[:7] + "-01")
+        while cur <= end:
+            mo = cur.strftime("%Y-%m")
+            months.append({"month": mo, "orders": by_month.get(mo, 0),
+                           "active_days": len(days_set.get(mo, set()))})
+            cur = (cur.replace(day=28) + datetime.timedelta(days=7)).replace(day=1)
+
+    empty_months = [m["month"] for m in months if m["orders"] == 0]
     return {
         "orders": _count("lz_orders"),
         "order_items": _count("lz_order_items"),
@@ -326,6 +348,8 @@ def db_stats():
         "first_order_date": first,
         "last_order_date": last,
         "span_days": span,
+        "empty_months": empty_months,
+        "by_month": months,
     }
 
 
