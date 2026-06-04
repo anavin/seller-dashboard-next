@@ -756,7 +756,7 @@ function render(sync){
 // รายได้แต่ละปี (ใช้ข้อมูลทั้งหมด ไม่ขึ้นกับช่วงที่เลือก)
 function renderYearRev(){
   const yr={};
-  for(const o of (DATA.orders||[])){ if(o.platform!=='lazada'||o.status==='cancelled'||o.status==='returned')continue;
+  for(const o of (DATA.orders||[])){ if(!state.platforms.has(o.platform)||o.status==='cancelled'||o.status==='returned')continue;
     const y=(o.date||'').slice(0,4); if(!y)continue;
     yr[y]=(yr[y]||0)+o.items.reduce((s,i)=>s+i.qty*i.price,0); }
   const ys=Object.keys(yr).sort();
@@ -871,7 +871,7 @@ function renderCustomers(curSet){
   // รู้ประวัติก่อนช่วงที่เลือก: buyer ที่เคยซื้อก่อนวันเริ่มช่วง = ลูกค้าเก่า (กันนับเป็น "ใหม่")
   const wdates=[...curSet].sort(); const winFrom=wdates[0]||'';
   const priorSeen=new Set();
-  for(const o of DATA.orders){ if(o.platform!=='lazada'||!o.buyer)continue;
+  for(const o of DATA.orders){ if(!state.platforms.has(o.platform)||!o.buyer)continue;
     if(o.status==='cancelled'||o.status==='returned')continue;
     if((o.date||'')<winFrom)priorSeen.add(o.buyer); }
   const sorted=[...wk].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -922,8 +922,8 @@ function renderCustomers(curSet){
 }
 // ---------- วิเคราะห์ขั้นสูง (ใช้ข้อมูลทั้งหมด) ----------
 function renderAdvanced(){
-  const valid=DATA.orders.filter(o=>o.platform==='lazada'&&o.status!=='cancelled'&&o.status!=='returned');
-  const allO=DATA.orders.filter(o=>o.platform==='lazada');
+  const valid=DATA.orders.filter(o=>state.platforms.has(o.platform)&&o.status!=='cancelled'&&o.status!=='returned');
+  const allO=DATA.orders.filter(o=>state.platforms.has(o.platform));
   const accent=cssvar('--accent');
   const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
   // ===== 1) พยากรณ์ =====
@@ -1055,7 +1055,7 @@ function renderFinance(curD){
     options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:xtick},y:{ticks:{callback:v=>v+'%'}}}}});
   // ยอดสั่งซื้อ (จากออเดอร์) vs ยอด settle จริง (จากการเงิน) รายเดือน
   const ordM={};
-  for(const o of (DATA.orders||[])){ if(o.platform!=='lazada'||o.status==='cancelled'||o.status==='returned')continue;
+  for(const o of (DATA.orders||[])){ if(!state.platforms.has(o.platform)||o.status==='cancelled'||o.status==='returned')continue;
     if(!inWin(o.date))continue;
     const k=(o.date||'').slice(0,7); if(!k)continue; ordM[k]=(ordM[k]||0)+o.items.reduce((s,i)=>s+i.qty*i.price,0); }
   const allM=[...new Set([...Object.keys(ordM),...mks])].sort();
@@ -1071,7 +1071,7 @@ function renderFinance(curD){
 }
 // ---------- วิเคราะห์เชิงลึก (ใช้ข้อมูลทั้งหมด ไม่ขึ้นกับฟิลเตอร์วันที่) ----------
 function renderInsight(){
-  const valid=DATA.orders.filter(o=>o.platform==='lazada'&&o.status!=='cancelled'&&o.status!=='returned');
+  const valid=DATA.orders.filter(o=>state.platforms.has(o.platform)&&o.status!=='cancelled'&&o.status!=='returned');
   const accent=cssvar('--accent'), pal=['#5b6cff','#10b981','#f59e0b','#ef4444','#9b5bff','#06b6d4'];
   const revOf=o=>o.items.reduce((s,i)=>s+i.qty*i.price,0);
   // เดือนล่าสุดที่ยังไม่ครบ (partial) — ตัดออกจากค่าเฉลี่ย/ซ่อนใน YoY กันตัวเลขเพี้ยน
