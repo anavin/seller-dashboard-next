@@ -15,10 +15,24 @@ import time
 import hmac
 import hashlib
 import datetime
+import re
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
+
+# คำทั่วไป/แบรนด์/ขนาด ที่ตัดทิ้งตอนจับคู่ "ชื่อสินค้า -> หมวด"
+_CAT_STOP = {"น้ำหอม", "น้ําหอม", "lab", "parfumo", "ผู้ชาย", "ผู้หญิง", "unisex",
+             "eau", "de", "parfum", "edp", "edt", "perfume", "ml", "ขนาด", "กลิ่น",
+             "แบรนด์", "แท้", "set", "เซ็ต", "กล่อง", "ขวด", "for", "men", "women"}
+
+
+def _norm_line(s):
+    """ดึง token ชื่อรุ่นสินค้า (ตัดแบรนด์/ขนาด/คำทั่วไป) ไว้จับคู่หมวด"""
+    s = str(s or "").lower()
+    s = re.sub(r"\d+\s*ml", " ", s)
+    s = re.sub(r"[^a-z฀-๿]+", " ", s)
+    return [t for t in s.split() if t and t not in _CAT_STOP and len(t) > 1]
 
 LAZADA_BASE = "https://api.lazada.co.th/rest"
 AUTH_BASE = "https://auth.lazada.com/rest"
@@ -92,20 +106,22 @@ def _sb_all(table, select="*", extra=""):
 
 def _pay_group(p):
     """จัดกลุ่มวิธีชำระเงิน (ละเอียด -> หมวดใหญ่อ่านง่าย) ทำที่หลังบ้านก่อนส่งให้ dashboard"""
-    s = str(p or "").upper().strip()
+    raw = str(p or "").strip()
+    s = raw.upper()
     if not s:
         return "ไม่ระบุ"
-    if "COD" in s:
+    if "COD" in s or "ปลายทาง" in raw or "เก็บเงินปลายทาง" in raw:
         return "เก็บปลายทาง (COD)"
-    if "PROMPTPAY" in s:
+    if "PROMPTPAY" in s or "พร้อมเพย์" in raw or s.startswith("QR") or " QR" in s:
         return "PromptPay"
-    if "VIRTUAL_ACCOUNT" in s or "_BANK" in s or "BANK_VA" in s or "BANK_ONLINE" in s:
-        return "โอนผ่านธนาคาร"
-    if "CARD" in s or "PAY_LATER" in s or "CREDIT" in s or "DEBIT" in s or "INSTALLMENT" in s:
-        return "บัตร/ผ่อน"
-    if "TMN" in s or "WALLET" in s or "LINE_PAY" in s or "RABBIT" in s or "PAYMENT_ACCOUNT" in s:
+    if "SHOPEEPAY" in s or "TMN" in s or "WALLET" in s or "LINE_PAY" in s or "RABBIT" in s or "PAYMENT_ACCOUNT" in s:
         return "e-Wallet"
-    if "OTC" in s or "SEVENELEVEN" in s or "COUNTER" in s:
+    if "VIRTUAL_ACCOUNT" in s or "_BANK" in s or "BANK_VA" in s or "BANK_ONLINE" in s or "โอน" in raw:
+        return "โอนผ่านธนาคาร"
+    if ("SPAYLATER" in s or "PAY_LATER" in s or "PAYLATER" in s or "INSTALLMENT" in s
+            or "ผ่อน" in raw or "CARD" in s or "CREDIT" in s or "DEBIT" in s or "บัตร" in raw):
+        return "บัตร/ผ่อน"
+    if "OTC" in s or "SEVENELEVEN" in s or "COUNTER" in s or "เคาน์เตอร์" in raw:
         return "เคาน์เตอร์/ร้านสะดวกซื้อ"
     if "ZERO" in s or "FREE" in s:
         return "ฟรี/0 บาท"
@@ -168,11 +184,46 @@ def build_from_db():
     } for p in products]
 
     # ---------- Shopee: ต่อท้าย feed เป็น platform='shopee' (ถ้ามีตาราง sp_*) ----------
+    # จับคู่ "ชื่อสินค้า/SKU ของ Shopee -> หมวด" จากแคตตาล็อก Lazada (แบรนด์เดียวกัน)
+    _laz_lines = []
+    _laz_sku = {}
+    for src in (products, items):
+        for p in src:
+            cat = (p.get("category") or "").strip()
+            if not cat:
+                continue
+            sk = str(p.get("sku", "") or "").strip().lower()
+            if sk:
+                _laz_sku.setdefault(sk, cat)
+            toks = set(_norm_line(p.get("name", "")))
+            if toks:
+                _laz_lines.append((toks, cat))
+
+    def _cat_from_name(name, sku):
+        sk = str(sku or "").strip().lower()
+        if sk in _laz_sku:
+            return _laz_sku[sk]
+        for cand in (sku, name):
+            ct = set(_norm_line(cand))
+            if not ct:
+                continue
+            best, best_ov = "", 0
+            for toks, cat in _laz_lines:
+                ov = len(ct & toks)
+                if ov > best_ov and ov >= max(1, int(min(len(ct), len(toks)) * 0.5)):
+                    best, best_ov = cat, ov
+            if best:
+                return best
+        return ""
+
     sp_by_order = {}
     for it in sp_items:
+        cat = it.get("category", "") or ""
+        if not cat:
+            cat = _cat_from_name(it.get("name", ""), it.get("sku", ""))
         sp_by_order.setdefault(it["order_id"], []).append({
             "sku": it.get("sku", ""), "name": it.get("name", ""),
-            "category": it.get("category", "") or "",
+            "category": cat,
             "qty": int(it.get("qty", 1) or 1),
             "price": float(it.get("price", 0) or 0), "cost": float(it.get("cost", 0) or 0),
         })

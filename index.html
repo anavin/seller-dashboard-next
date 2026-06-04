@@ -6,6 +6,7 @@
 <title>Seller Analytics — TikTok / Shopee / Lazada</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#f4f6fb; --panel:#ffffff; --panel2:#f8fafc; --line:#e6e9f0;
@@ -278,6 +279,8 @@
       <div id="calPop" class="cal-pop"></div>
       <button id="exportBtn" class="theme-btn" style="width:auto;padding:7px 12px">⬇ Export</button>
       <button id="backfillBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="ดึงออเดอร์ (รวมลูกค้า+วิธีจ่าย) + การเงิน ย้อนหลังทั้งหมด">🔄 ดึงทั้งหมด</button>
+      <button id="shopeeImportBtn" class="theme-btn" style="width:auto;padding:7px 12px" title="นำเข้าไฟล์ออเดอร์ Shopee (Order.all...xlsx) จาก Seller Center">🟠 นำเข้า Shopee</button>
+      <input type="file" id="shopeeFile" accept=".xlsx,.xls" style="display:none">
     </div>
   </div>
 
@@ -1002,9 +1005,12 @@ function renderAdvanced(){
   mk('mlCatChart',{type:'bar',data:{labels:zk,datasets:cats.map(c=>({label:c,data:zk.map(z=>(mlCat[z]&&mlCat[z][c])||0),backgroundColor:catColor(c)}))},
     options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}},scales:{x:{stacked:true},y:{stacked:true,ticks:{precision:0}}}}});
   // ===== 6) กทม vs ตจว =====
+  // รองรับทั้งระดับเขต (Lazada) และระดับจังหวัด "กรุงเทพมหานคร" (Shopee)
+  const isBKK=reg=>{const d=(reg||'').replace(/^จังหวัด/,'').split('/')[0].trim();
+    return BKK_KHET.has(d)||/กรุงเทพ|bangkok/i.test(reg||'');};
   let bRev=0,pRev=0,bN=0,pN=0;
-  for(const o of valid){const dist=(o.region||'').split('/')[0].trim();const r=revOf(o);
-    if(BKK_KHET.has(dist)){bRev+=r;bN++;}else{pRev+=r;pN++;}}
+  for(const o of valid){const r=revOf(o);
+    if(isBKK(o.region)){bRev+=r;bN++;}else{pRev+=r;pN++;}}
   mk('bkkChart',{type:'doughnut',data:{labels:['กรุงเทพฯ','ต่างจังหวัด'],datasets:[{data:[bRev,pRev],backgroundColor:['#5b6cff','#10b981'],borderWidth:0}]},
     options:{maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true}}}}});
   // ===== KPI =====
@@ -1639,6 +1645,75 @@ async function backfillAll(){
   setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1500);
 }
 $('#backfillBtn').onclick=backfillAll;
+
+// ---------- นำเข้าไฟล์ Shopee (Order export .xlsx) ----------
+function _shFirstIdx(headers,name){ for(let i=0;i<headers.length;i++){ if(String(headers[i]).trim()===name)return i; } return -1; }
+function _shStatus(s,refund){ s=String(s||''); if(s.indexOf('ยกเลิก')>=0)return 'cancelled';
+  if(refund&&String(refund).trim())return 'returned'; return 'completed'; }
+function _shNum(x){ const n=parseFloat(x); return isNaN(n)?0:n; }
+async function _sha256(str){ const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+function _shDate(v){ // SheetJS อาจคืน string หรือ Date
+  if(v instanceof Date){ const p=n=>String(n).padStart(2,'0');
+    return {d:`${v.getFullYear()}-${p(v.getMonth()+1)}-${p(v.getDate())}`, h:v.getHours()}; }
+  const s=String(v||''); const d=s.slice(0,10);
+  const hm=s.match(/\s(\d{1,2}):/); return {d, h:hm?parseInt(hm[1]):12};
+}
+async function importShopeeFile(file){
+  const pw=(()=>{try{return sessionStorage.getItem('dpw');}catch(e){return null;}})();
+  if(!pw){alert('กรุณาเข้าสู่ระบบใหม่ก่อน');return;}
+  const btn=$('#shopeeImportBtn'); btn.disabled=true; const old=btn.textContent; btn.textContent='⏳ กำลังอ่านไฟล์…';
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array',cellDates:true});
+    const ws=wb.Sheets['orders']||wb.Sheets[wb.SheetNames[0]];
+    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+    if(!aoa.length){alert('ไฟล์ว่าง');btn.disabled=false;btn.textContent=old;return;}
+    const H=aoa[0];
+    const c={
+      ord:_shFirstIdx(H,'หมายเลขคำสั่งซื้อ'), stat:_shFirstIdx(H,'สถานะการสั่งซื้อ'),
+      refund:_shFirstIdx(H,'สถานะการคืนเงินหรือคืนสินค้า'), date:_shFirstIdx(H,'วันที่ทำการสั่งซื้อ'),
+      pay:_shFirstIdx(H,'ช่องทางการชำระเงิน'), name:_shFirstIdx(H,'ชื่อสินค้า'),
+      sku:_shFirstIdx(H,'เลขอ้างอิง SKU (SKU Reference No.)'), price:_shFirstIdx(H,'ราคาขาย'),
+      qty:_shFirstIdx(H,'จำนวน'), comm:_shFirstIdx(H,'ค่าคอมมิชชั่น'),
+      txn:_shFirstIdx(H,'Transaction Fee'), svc:_shFirstIdx(H,'ค่าบริการ'),
+      prov:_shFirstIdx(H,'จังหวัด'), rcpt:_shFirstIdx(H,'ชื่อผู้รับ'),
+      phone:_shFirstIdx(H,'หมายเลขโทรศัพท์'), addr:_shFirstIdx(H,'ที่อยู่ในการจัดส่ง'),
+      zip:_shFirstIdx(H,'รหัสไปรษณีย์')
+    };
+    if(c.ord<0){alert('ไม่พบคอลัมน์ "หมายเลขคำสั่งซื้อ" — ใช้ไฟล์ Order export จาก Shopee นะครับ');btn.disabled=false;btn.textContent=old;return;}
+    btn.textContent='⏳ กำลังแปลงข้อมูล…';
+    const byo={}; // order_id -> rows
+    for(let i=1;i<aoa.length;i++){ const r=aoa[i]; const oid=String(r[c.ord]||'').trim(); if(!oid)continue; (byo[oid]||(byo[oid]=[])).push(r); }
+    const orders=[], items=[];
+    for(const oid in byo){
+      const rs=byo[oid], f=rs[0];
+      const status=_shStatus(f[c.stat], c.refund>=0?f[c.refund]:'');
+      const dt=_shDate(f[c.date]);
+      const pf=_shNum(f[c.comm])+_shNum(f[c.txn])+_shNum(f[c.svc]);
+      const prov=String(c.prov>=0?f[c.prov]:'').replace(/^จังหวัด/,'').trim();
+      const buyer=await _sha256([f[c.rcpt],f[c.phone],f[c.addr],f[c.zip]].map(x=>String(x||'')).join('|'));
+      orders.push({order_id:oid, date:dt.d, hour:dt.h, status, region:prov,
+        payment:String(c.pay>=0?f[c.pay]:''), platform_fee:pf, shipping_fee:0, buyer});
+      rs.forEach((r,line)=>{
+        items.push({order_id:oid, line, sku:String(c.sku>=0?r[c.sku]:'')||String(c.name>=0?r[c.name]:''),
+          name:String(c.name>=0?r[c.name]:''), category:'',
+          qty:_shNum(r[c.qty])||1, price:_shNum(r[c.price]), cost:0});
+      });
+    }
+    btn.textContent=`⏳ กำลังบันทึก ${orders.length} ออเดอร์…`;
+    const resp=await fetch(`/api/shopee_import?pw=${encodeURIComponent(pw)}`,{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({orders,items})});
+    const j=await resp.json();
+    if(!resp.ok||j.error)throw new Error(j.error||'import failed');
+    btn.textContent=`✓ นำเข้า ${j.orders} ออเดอร์ · ${j.items} รายการ`;
+    setTimeout(()=>{try{submitLogin(pw,true);}catch(e){location.reload();}},1500);
+  }catch(e){ alert('นำเข้าไม่สำเร็จ: '+e.message); btn.textContent=old; }
+  finally{ btn.disabled=false; }
+}
+$('#shopeeImportBtn').onclick=()=>$('#shopeeFile').click();
+$('#shopeeFile').onchange=e=>{ const f=e.target.files[0]; if(f)importShopeeFile(f); e.target.value=''; };
+
 // ---------- ดึงการเงิน: วนเรียก finance=1 จนกว่า more=false ----------
 $('#kpiGrid').onclick=e=>{const c=e.target.closest('[data-kpi]'); if(c)openKpiDetail(c.dataset.kpi);};
 $('#kpiModalClose').onclick=()=>$('#kpiModal').style.display='none';
