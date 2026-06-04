@@ -592,6 +592,8 @@ function mk(id,cfg){ if(charts[id])charts[id].destroy(); const el=document.getEl
 function clearCharts(ids){ ids.forEach(id=>{ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }); }
 // ตั้งคำบรรยายใต้หัวกราฟ (csub) ของการ์ดที่มี element id นั้น
 function setSub(innerId,text){const el=document.getElementById(innerId); if(!el)return; const card=el.closest('.card'); if(!card)return; const sub=card.querySelector('.csub'); if(sub)sub.textContent=text;}
+// สต็อกเฉพาะแพลตฟอร์มที่ติ๊กเลือก (ไม่ติ๊ก = ไม่นับ)
+function stockSel(p){let t=0; for(const k of ['tiktok','shopee','lazada']) if(state.platforms.has(k)) t+=(p.stock&&p.stock[k])||0; return t;}
 function applyChartTheme(){Chart.defaults.color=cssvar('--muted');Chart.defaults.borderColor=cssvar('--line');
   Chart.defaults.font.family='Inter, Noto Sans Thai, sans-serif';}
 // ซ่อนการ์ด/ส่วนที่ไม่มีข้อมูล (ข้อมูลจริงบางมิติว่าง) ให้หน้าดูแน่นและโปร
@@ -716,7 +718,7 @@ function render(sync){
       for(const i of o.items){if(!matchCat(i))continue;const k=i.name||i.sku;pr[k]=(pr[k]||0)+i.qty*i.price;}}
     const top=Object.entries(pr).sort((a,b)=>b[1]-a[1])[0];
     if(top)bits.push(`สินค้าขายดี: <b>${top[0]}</b>`);
-    const outN=DATA.products.filter(p=>(p.stock.tiktok+p.stock.shopee+p.stock.lazada)===0).length;
+    const outN=DATA.products.filter(p=>stockSel(p)===0).length;
     if(outN>0)bits.push(`<span style="color:var(--red)">⚠️ หมดสต็อก ${outN} รายการ</span>`);
     const el=$('#insightBar');
     el.innerHTML = bits.length ? '💡 '+bits.join(' &nbsp;·&nbsp; ') : '';
@@ -787,7 +789,10 @@ function activeSection(){const a=document.querySelector('#nav a.active');return 
 // ---------- รีวิวสินค้า — ตามช่วงที่เลือก ----------
 function renderReviews(curD){
   const from=curD[0], to=curD[curD.length-1];
-  const rv=(DATA.reviews||[]).filter(r=>{const t=(r.time||'').slice(0,10); return t?(t>=from&&t<=to):true;});
+  // รีวิวมีเฉพาะ Lazada — ถ้าไม่ติ๊ก Lazada ให้ว่าง
+  const rv=state.platforms.has('lazada')
+    ? (DATA.reviews||[]).filter(r=>{const t=(r.time||'').slice(0,10); return t?(t>=from&&t<=to):true;})
+    : [];
   if(!rv.length){ clearCharts(['ratingDistChart']);
     $('#reviewKpi').innerHTML='<div class="muted" style="padding:10px">ไม่มีรีวิวในช่วงที่เลือก</div>';
     ['reviewLowTable','reviewBadTable'].forEach(id=>{const e=$('#'+id); if(e)e.innerHTML='';}); return; }
@@ -1026,7 +1031,8 @@ function renderAdvanced(){
 function renderFinance(curD){
   const from=curD[0], to=curD[curD.length-1];
   const inWin=d=>{const x=(d||'').slice(0,10); return x?(x>=from&&x<=to):false;};
-  const fin=(DATA.finance||[]).filter(s=>inWin(s.date));
+  // ข้อมูลการเงินมีเฉพาะ Lazada — ถ้าไม่ติ๊ก Lazada ให้ว่าง
+  const fin=state.platforms.has('lazada') ? (DATA.finance||[]).filter(s=>inWin(s.date)) : [];
   if(!fin.length){ clearCharts(['finChart','feeRateChart','settleVsOrderChart']);
     $('#finKpi').innerHTML='<div class="muted" style="padding:10px">ไม่มีข้อมูลการเงินในช่วงที่เลือก</div>';
     const t=$('#finTable'); if(t)t.innerHTML=''; return; }
@@ -1115,9 +1121,9 @@ function renderInsight(){
   $('#loseTable').innerHTML=head+moverRows(mv.filter(m=>m.d<0).sort((a,b)=>a.d-b.d).slice(0,lim('loseTable',8)),-1)+'</tbody>';
   // 5) Dead stock
   const sold90=new Set();for(const o of valid)if(o.date>d90)for(const it of o.items)sold90.add(it.sku);
-  const dead=DATA.products.filter(p=>p.stock.lazada>0&&!sold90.has(p.sku)).sort((a,b)=>b.stock.lazada-a.stock.lazada).slice(0,lim('deadTable',15));
+  const dead=DATA.products.filter(p=>stockSel(p)>0&&!sold90.has(p.sku)).sort((a,b)=>stockSel(b)-stockSel(a)).slice(0,lim('deadTable',15));
   $('#deadTable').innerHTML='<thead><tr><th>SKU</th><th>สินค้า</th><th class="num">สต็อก</th></tr></thead><tbody>'+
-    (dead.length?dead.map(p=>`<tr><td class="muted">${p.sku}</td><td>${p.name}</td><td class="num">${fmt(p.stock.lazada)}</td></tr>`).join(''):'<tr><td colspan="3" class="muted" style="text-align:center;padding:14px">ไม่มี — สินค้าที่มีสต็อกขายได้หมด ✅</td></tr>')+'</tbody>';
+    (dead.length?dead.map(p=>`<tr><td class="muted">${p.sku}</td><td>${p.name}</td><td class="num">${fmt(stockSel(p))}</td></tr>`).join(''):'<tr><td colspan="3" class="muted" style="text-align:center;padding:14px">ไม่มี — สินค้าที่มีสต็อกขายได้หมด ✅</td></tr>')+'</tbody>';
   // 6) ซื้อคู่กันบ่อย
   const pc={};
   for(const o of valid){const sk=[...new Set(o.items.map(i=>i.name||i.sku))];
@@ -1393,7 +1399,7 @@ function renderProductExtras(curSet){
 }
 
 function renderInventory(curSet, windowDays){
-  const prods=DATA.products.map(p=>({...p,total:p.stock.tiktok+p.stock.shopee+p.stock.lazada}));
+  const prods=DATA.products.map(p=>({...p,total:stockSel(p)}));
   const out=prods.filter(p=>p.total===0).length;
   const low=prods.filter(p=>p.total<30).sort((a,b)=>a.total-b.total);
   // ความเร็วขาย (ชิ้น/วัน) จากยอดขายในช่วง
